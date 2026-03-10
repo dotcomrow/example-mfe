@@ -96,6 +96,28 @@ If your auth provider returns `access_token` in URL hash (implicit flow), the pr
 
 If those fields are omitted in `props_json`, the MFE falls back to build-time defaults from env.
 
+## Automated Directus Sync (No Manual Collection Edits)
+
+`publish.yml` now supports automatic `cms_modules` upsert in Directus:
+
+1. Add repository secrets:
+   - `DIRECTUS_BASE_URL` (example: `https://cms.example.com`)
+   - `DIRECTUS_STATIC_TOKEN` (service token with write access to `cms_modules`)
+   - optional: `DIRECTUS_MODULE_SITE_KEY` (leave unset for global module)
+2. Publish tag `v*` (or run Publish workflow manually).
+3. Workflow will:
+   - build artifact
+   - compute release bundle URL for tag builds
+   - run `npm run sync:directus` to upsert module record from `directus/cms-module.seed.json`
+   - attach release artifacts
+
+The sync script stores publish metadata in:
+
+- `default_props.__mfe_release.bundleUrl`
+- `default_props.__mfe_release.moduleVersion`
+- `default_props.__mfe_release.releaseTag`
+- `default_props.__mfe_release.releaseSha`
+
 ## Important Runtime Note
 
 This repo provides the MFE contract + bundle. Your shell runtime must include or load this module definition at runtime.
@@ -115,6 +137,7 @@ The bundle also self-registers at:
 - `npm run typecheck` - TS type check
 - `npm run build` - compile single JS + copy module definition
 - `npm run dev` - local preview server with live rebuild + preview harness
+- `npm run sync:directus` - upsert `cms_modules` record in Directus from seed file
 
 ## GitHub Actions
 
@@ -134,3 +157,6 @@ Secrets expected by publish workflow:
 - `MFE_DEFAULT_GRAPHQL_HTTP_URL`
 - `MFE_DEFAULT_GRAPHQL_WS_URL`
 - `MFE_DEFAULT_GRAPHQL_AUTH_TOKEN`
+- `DIRECTUS_BASE_URL`
+- `DIRECTUS_STATIC_TOKEN`
+- `DIRECTUS_MODULE_SITE_KEY` (optional)

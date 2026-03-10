@@ -37,6 +37,18 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Resolve Bundle URL
+        id: bundle
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/example-mfe.js"
+            echo "bundle_url=${URL}" >> "$GITHUB_OUTPUT"
+          else
+            echo "bundle_url=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload Build Artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
@@ -47,6 +59,18 @@ jobs:
             dist/module.definition.json
             directus/cms-module.seed.json
             directus/cms-block-module.props.example.json
+
+      - name: Sync Module To Directus
+        if: ${{ secrets.DIRECTUS_BASE_URL != '' && secrets.DIRECTUS_STATIC_TOKEN != '' }}
+        env:
+          DIRECTUS_BASE_URL: ${{ secrets.DIRECTUS_BASE_URL }}
+          DIRECTUS_STATIC_TOKEN: ${{ secrets.DIRECTUS_STATIC_TOKEN }}
+          MODULE_SITE_KEY: ${{ secrets.DIRECTUS_MODULE_SITE_KEY }}
+          MODULE_STATUS: published
+          MODULE_REFRESH_TARGET: both
+          MFE_MODULE_VERSION: ${{ github.ref_name }}
+          MFE_BUNDLE_URL: ${{ steps.bundle.outputs.bundle_url }}
+        run: npm run sync:directus
 
       - name: Create GitHub Release (tag pushes)
         if: startsWith(github.ref, 'refs/tags/')

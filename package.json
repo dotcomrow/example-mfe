@@ -12,7 +12,8 @@
     "build:bundle": "node scripts/build.mjs",
     "build:definition": "mkdir -p dist && cp module.definition.json dist/module.definition.json",
     "build": "npm run clean && npm run typecheck && npm run build:bundle && npm run build:definition",
-    "dev": "npm run clean:dev && node scripts/dev.mjs"
+    "dev": "npm run clean:dev && node scripts/dev.mjs",
+    "sync:directus": "node scripts/sync-directus-module.mjs"
   },
   "devDependencies": {
     "dotenv": "^16.6.1",
