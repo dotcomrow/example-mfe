@@ -1,0 +1,60 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: "Build mode (production/local)"
+        required: false
+        default: "production"
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      MFE_BUILD_MODE: ${{ inputs.build_mode || 'production' }}
+      MFE_DEFAULT_GRAPHQL_HTTP_URL: ${{ secrets.MFE_DEFAULT_GRAPHQL_HTTP_URL }}
+      MFE_DEFAULT_GRAPHQL_WS_URL: ${{ secrets.MFE_DEFAULT_GRAPHQL_WS_URL }}
+      MFE_DEFAULT_GRAPHQL_AUTH_TOKEN: ${{ secrets.MFE_DEFAULT_GRAPHQL_AUTH_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: example-mfe-dist
+          path: |
+            dist/example-mfe.js
+            dist/example-mfe.js.map
+            dist/module.definition.json
+            directus/cms-module.seed.json
+            directus/cms-block-module.props.example.json
+
+      - name: Create GitHub Release (tag pushes)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/example-mfe.js
+            dist/example-mfe.js.map
+            dist/module.definition.json
+            directus/cms-module.seed.json
+            directus/cms-block-module.props.example.json

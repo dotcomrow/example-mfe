@@ -1,0 +1,188 @@
+{
+  "module_key": "mfe-example-chat",
+  "name": "MFE Example Chat (GraphQL Stream)",
+  "description": "Example MFE chat field: GraphQL mutation submit + GraphQL stream subscription response.",
+  "provider": "mfe",
+  "component_type": "mfe.example.chat",
+  "status": "published",
+  "site_key": null,
+  "refresh_target": "both",
+  "props_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "title": {
+        "type": "string",
+        "title": "Title"
+      },
+      "inputPlaceholder": {
+        "type": "string",
+        "title": "Input Placeholder"
+      },
+      "submitLabel": {
+        "type": "string",
+        "title": "Submit Label"
+      },
+      "assistantLabel": {
+        "type": "string",
+        "title": "Assistant Label"
+      },
+      "maxMessages": {
+        "type": "integer",
+        "title": "Max Messages",
+        "minimum": 1,
+        "maximum": 200
+      },
+      "requestCommand": {
+        "type": "string",
+        "title": "Request Command"
+      },
+      "graphql": {
+        "type": "object",
+        "title": "GraphQL Transport",
+        "additionalProperties": false,
+        "properties": {
+          "httpUrl": {
+            "type": "string",
+            "title": "GraphQL HTTP URL"
+          },
+          "wsUrl": {
+            "type": "string",
+            "title": "GraphQL WS URL"
+          },
+          "authToken": {
+            "type": "string",
+            "title": "Auth Token"
+          },
+          "submitMutation": {
+            "type": "string",
+            "title": "Submit Mutation"
+          },
+          "submitVariables": {
+            "type": "object",
+            "title": "Submit Variables Template",
+            "additionalProperties": true
+          },
+          "submitRequestIdPath": {
+            "type": "string",
+            "title": "Submit Request Id Path"
+          },
+          "streamSubscription": {
+            "type": "string",
+            "title": "Stream Subscription"
+          },
+          "streamVariables": {
+            "type": "object",
+            "title": "Stream Variables Template",
+            "additionalProperties": true
+          },
+          "streamTextPath": {
+            "type": "string",
+            "title": "Stream Text Path"
+          },
+          "streamDonePath": {
+            "type": "string",
+            "title": "Stream Done Path"
+          },
+          "streamErrorPath": {
+            "type": "string",
+            "title": "Stream Error Path"
+          },
+          "streamChunkMode": {
+            "type": "string",
+            "title": "Stream Chunk Mode",
+            "enum": [
+              "append",
+              "replace"
+            ]
+          },
+          "conversationId": {
+            "type": "string",
+            "title": "Conversation Id"
+          }
+        },
+        "required": [
+          "httpUrl",
+          "wsUrl",
+          "submitMutation",
+          "submitRequestIdPath",
+          "streamSubscription",
+          "streamTextPath",
+          "streamDonePath"
+        ]
+      },
+      "async": {
+        "type": "object",
+        "title": "Async Config",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode",
+            "enum": [
+              "none",
+              "request-response",
+              "subscribe",
+              "mixed"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "mode"
+        ]
+      }
+    },
+    "required": [
+      "graphql"
+    ]
+  },
+  "default_props": {
+    "title": "Example Chat MFE",
+    "inputPlaceholder": "Ask AI...",
+    "submitLabel": "Submit",
+    "assistantLabel": "Assistant",
+    "maxMessages": 20,
+    "requestCommand": "mfe.example.chat.send",
+    "graphql": {
+      "httpUrl": "https://your-graphql-gateway.example.com/v1/graphql",
+      "wsUrl": "wss://your-graphql-gateway.example.com/v1/graphql",
+      "authToken": "",
+      "submitMutation": "mutation PublishAsyncRequest($input: json!) { publish_async_request(input: $input) }",
+      "submitVariables": {
+        "input": {
+          "handler": "ai-service",
+          "operation": "chat.completion",
+          "payload": {
+            "prompt": "{{prompt}}",
+            "conversationId": "{{conversationId}}"
+          },
+          "metadata": {
+            "moduleKey": "{{moduleKey}}",
+            "instanceId": "{{instanceId}}",
+            "source": "{{source}}"
+          },
+          "expires_in_seconds": 86400
+        }
+      },
+      "submitRequestIdPath": "publish_async_request.request_id",
+      "streamSubscription": "subscription StreamClientAsyncMessage($requestId: String!) { graphql_client_async_messages(where: { request_id: { _eq: $requestId } }, order_by: { updated_at: desc }, limit: 1) { request_id status response_payload error_payload completed_at updated_at } }",
+      "streamVariables": {
+        "requestId": "{{requestId}}"
+      },
+      "streamTextPath": "graphql_client_async_messages.0.response_payload",
+      "streamDonePath": "graphql_client_async_messages.0.status",
+      "streamErrorPath": "graphql_client_async_messages.0.error_payload",
+      "streamChunkMode": "replace",
+      "conversationId": ""
+    },
+    "async": {
+      "enabled": true,
+      "mode": "mixed"
+    }
+  }
+}

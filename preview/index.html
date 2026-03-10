@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Example MFE Preview</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #f8fafc;
+        color: #0f172a;
+      }
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 1rem;
+        display: grid;
+        gap: 1rem;
+      }
+      .panel {
+        display: grid;
+        gap: 0.65rem;
+        padding: 0.9rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #ffffff;
+      }
+      .row {
+        display: grid;
+        gap: 0.35rem;
+      }
+      .row > label {
+        font-size: 0.8rem;
+        color: #475569;
+      }
+      input,
+      textarea,
+      button {
+        font: inherit;
+      }
+      input,
+      textarea {
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 0.5rem 0.6rem;
+        background: #ffffff;
+      }
+      textarea {
+        min-height: 5rem;
+      }
+      .actions {
+        display: flex;
+        gap: 0.5rem;
+      }
+      button {
+        border: 1px solid #1d4ed8;
+        background: #1d4ed8;
+        color: #ffffff;
+        border-radius: 8px;
+        padding: 0.45rem 0.85rem;
+        cursor: pointer;
+      }
+      button.secondary {
+        border-color: #94a3b8;
+        background: #ffffff;
+        color: #0f172a;
+      }
+      .host {
+        min-height: 220px;
+      }
+      .muted {
+        color: #64748b;
+        font-size: 0.82rem;
+      }
+      #authStatus[data-state="error"] {
+        color: #b91c1c;
+      }
+      #authStatus[data-state="ok"] {
+        color: #166534;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="panel">
+        <h1 style="margin:0; font-size: 1.1rem;">Example MFE Local Preview</h1>
+        <p class="muted" style="margin:0;">
+          Edit GraphQL endpoints and remount the module. Query/mutation docs are configurable from Directus props in production.
+        </p>
+        <div class="row">
+          <label for="httpUrl">GraphQL HTTP URL</label>
+          <input id="httpUrl" />
+        </div>
+        <div class="row">
+          <label for="wsUrl">GraphQL WS URL</label>
+          <input id="wsUrl" />
+        </div>
+        <div class="row">
+          <label for="authToken">Auth Token (optional)</label>
+          <input id="authToken" />
+        </div>
+        <div class="row">
+          <label for="authIssuer">Auth Issuer URL</label>
+          <input id="authIssuer" value="https://auth.suncoast.systems" />
+        </div>
+        <div class="row">
+          <label for="authClientId">Auth Client ID</label>
+          <input id="authClientId" />
+        </div>
+        <div class="row">
+          <label for="authAudience">Auth Audience (optional)</label>
+          <input id="authAudience" />
+        </div>
+        <div class="row">
+          <label for="authScope">Auth Scope</label>
+          <input id="authScope" value="openid profile email" />
+        </div>
+        <div class="row">
+          <label for="conversationId">Conversation Id (optional)</label>
+          <input id="conversationId" />
+        </div>
+        <div class="actions">
+          <button id="loginButton" type="button">Login</button>
+          <button id="clearTokenButton" class="secondary" type="button">Clear Token</button>
+          <button id="applyButton" type="button">Apply / Remount</button>
+        </div>
+        <p id="authStatus" class="muted" style="margin:0;"></p>
+      </section>
+      <section class="panel">
+        <div id="host" class="host"></div>
+      </section>
+    </main>
+    <script src="/dev-dist/preview/main.js"></script>
+  </body>
+  </html>
