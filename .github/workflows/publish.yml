@@ -21,6 +21,9 @@ jobs:
       MFE_DEFAULT_GRAPHQL_HTTP_URL: ${{ secrets.MFE_DEFAULT_GRAPHQL_HTTP_URL }}
       MFE_DEFAULT_GRAPHQL_WS_URL: ${{ secrets.MFE_DEFAULT_GRAPHQL_WS_URL }}
       MFE_DEFAULT_GRAPHQL_AUTH_TOKEN: ${{ secrets.MFE_DEFAULT_GRAPHQL_AUTH_TOKEN }}
+      DIRECTUS_BASE_URL: ${{ secrets.DIRECTUS_BASE_URL }}
+      DIRECTUS_STATIC_TOKEN: ${{ secrets.DIRECTUS_STATIC_TOKEN }}
+      DIRECTUS_MODULE_SITE_KEY: ${{ secrets.DIRECTUS_MODULE_SITE_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -61,11 +64,9 @@ jobs:
             directus/cms-block-module.props.example.json
 
       - name: Sync Module To Directus
-        if: ${{ secrets.DIRECTUS_BASE_URL != '' && secrets.DIRECTUS_STATIC_TOKEN != '' }}
+        if: ${{ env.DIRECTUS_BASE_URL != '' && env.DIRECTUS_STATIC_TOKEN != '' }}
         env:
-          DIRECTUS_BASE_URL: ${{ secrets.DIRECTUS_BASE_URL }}
-          DIRECTUS_STATIC_TOKEN: ${{ secrets.DIRECTUS_STATIC_TOKEN }}
-          MODULE_SITE_KEY: ${{ secrets.DIRECTUS_MODULE_SITE_KEY }}
+          MODULE_SITE_KEY: ${{ env.DIRECTUS_MODULE_SITE_KEY }}
           MODULE_STATUS: published
           MODULE_REFRESH_TARGET: both
           MFE_MODULE_VERSION: ${{ github.ref_name }}
