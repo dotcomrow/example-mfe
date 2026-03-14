@@ -53,6 +53,11 @@ export type ModuleContext = {
     cacheKey?: string;
     contentHash?: string;
     source?: string;
+    graphql?: {
+      httpUrl?: string;
+      wsUrl?: string;
+      authToken?: string;
+    };
   };
   emit?: (event: ModuleEventEnvelope) => void;
   request?: (command: string, payload: JsonValue, timeoutMs?: number) => Promise<unknown>;
@@ -87,6 +92,11 @@ export type CmsModuleMountContext = {
     cacheKey?: string;
     contentHash?: string;
     source?: string;
+    graphql?: {
+      httpUrl?: string;
+      wsUrl?: string;
+      authToken?: string;
+    };
   };
 };
 

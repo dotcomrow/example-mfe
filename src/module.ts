@@ -1,6 +1,5 @@
 import { createClient } from "graphql-ws";
 import { MODULE_KEY } from "./constants";
-import { buildEnvDefaults } from "./build-env";
 import type {
   JsonObject,
   JsonValue,
@@ -94,6 +93,20 @@ subscription StreamClientAsyncMessage($requestId: String!) {
 }
 `.trim();
 
+const RUNTIME_TOKEN_STORAGE_KEYS = [
+  "suncoast.auth.access_token",
+  "suncoast.auth.token",
+  "suncoast.auth.bearer_token",
+  "mfe.preview.authToken",
+  "access_token",
+] as const;
+
+type RuntimeGraphqlConfig = {
+  httpUrl: string;
+  wsUrl: string;
+  authToken: string;
+};
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -109,6 +122,103 @@ function asString(value: unknown, fallback = ""): string {
     return String(value);
   }
   return fallback;
+}
+
+function firstNonEmpty(...values: string[]): string {
+  for (const value of values) {
+    const normalized = value.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return "";
+}
+
+function readTokenFromStorage(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const read = (storage: Storage | undefined): string => {
+    if (!storage) {
+      return "";
+    }
+    for (const key of RUNTIME_TOKEN_STORAGE_KEYS) {
+      try {
+        const value = storage.getItem(key);
+        const normalized = asString(value).trim();
+        if (normalized) {
+          return normalized;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return "";
+  };
+
+  const readSafely = (pickStorage: () => Storage): string => {
+    try {
+      return read(pickStorage());
+    } catch {
+      return "";
+    }
+  };
+
+  return (
+    readSafely(() => window.sessionStorage) ||
+    readSafely(() => window.localStorage)
+  );
+}
+
+function readGraphqlFromWindow(): RuntimeGraphqlConfig {
+  if (typeof window === "undefined") {
+    return { httpUrl: "", wsUrl: "", authToken: "" };
+  }
+
+  const runtime = asRecord((window as Window & { __SUNCOAST_RUNTIME__?: unknown }).__SUNCOAST_RUNTIME__);
+  const runtimeGraphql = asRecord(runtime.graphql);
+
+  const globalAuth = asRecord((window as Window & { __SUNCOAST_AUTH__?: unknown }).__SUNCOAST_AUTH__);
+  const authTokenFromGetter = (() => {
+    const getter = globalAuth.getAccessToken;
+    if (typeof getter !== "function") {
+      return "";
+    }
+    try {
+      return asString(getter()).trim();
+    } catch {
+      return "";
+    }
+  })();
+
+  return {
+    httpUrl: asString(runtimeGraphql.httpUrl).trim(),
+    wsUrl: asString(runtimeGraphql.wsUrl).trim(),
+    authToken:
+      firstNonEmpty(
+        asString(runtimeGraphql.authToken),
+        authTokenFromGetter,
+        asString(globalAuth.accessToken),
+      ) || readTokenFromStorage(),
+  };
+}
+
+function readGraphqlFromDom(): RuntimeGraphqlConfig {
+  if (typeof document === "undefined") {
+    return { httpUrl: "", wsUrl: "", authToken: "" };
+  }
+
+  const root = document.getElementById("cms-root");
+  if (!(root instanceof HTMLElement)) {
+    return { httpUrl: "", wsUrl: "", authToken: "" };
+  }
+
+  return {
+    httpUrl: asString(root.dataset.graphqlHttpUrl).trim(),
+    wsUrl: asString(root.dataset.graphqlWsUrl).trim(),
+    authToken: asString(root.dataset.graphqlAuthToken).trim(),
+  };
 }
 
 function toDisplayText(value: unknown, depth = 0): string {
@@ -399,21 +509,9 @@ function normalizeGraphqlConfig(rawProps: Record<string, unknown>): GraphqlConfi
     .toLowerCase();
 
   return {
-    httpUrl:
-      asString(
-        graphql.httpUrl || graphql.http_url,
-        buildEnvDefaults.graphqlHttpUrl,
-      ).trim() || buildEnvDefaults.graphqlHttpUrl,
-    wsUrl:
-      asString(
-        graphql.wsUrl || graphql.ws_url,
-        buildEnvDefaults.graphqlWsUrl,
-      ).trim() || buildEnvDefaults.graphqlWsUrl,
-    authToken:
-      asString(
-        graphql.authToken || graphql.auth_token,
-        buildEnvDefaults.graphqlAuthToken,
-      ).trim() || buildEnvDefaults.graphqlAuthToken,
+    httpUrl: asString(graphql.httpUrl || graphql.http_url).trim(),
+    wsUrl: asString(graphql.wsUrl || graphql.ws_url).trim(),
+    authToken: asString(graphql.authToken || graphql.auth_token).trim(),
     submitMutation: asString(graphql.submitMutation, defaultSubmitMutation).trim() || defaultSubmitMutation,
     submitVariables: parseTemplateValue(
       graphql.submitVariables ?? {
@@ -522,6 +620,42 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
   let statusEl: HTMLDivElement | null = null;
   let activeDispose: (() => void) | null = null;
 
+  const resolveRuntimeGraphql = (): RuntimeGraphqlConfig => {
+    const runtimeFromContext = asRecord(ctx.environment?.graphql);
+    const runtimeFromDom = readGraphqlFromDom();
+    const runtimeFromWindow = readGraphqlFromWindow();
+    return {
+      httpUrl: firstNonEmpty(
+        asString(props.graphql.httpUrl),
+        asString(runtimeFromContext.httpUrl),
+        runtimeFromDom.httpUrl,
+        runtimeFromWindow.httpUrl,
+      ),
+      wsUrl: firstNonEmpty(
+        asString(props.graphql.wsUrl),
+        asString(runtimeFromContext.wsUrl),
+        runtimeFromDom.wsUrl,
+        runtimeFromWindow.wsUrl,
+      ),
+      authToken: firstNonEmpty(
+        asString(props.graphql.authToken),
+        asString(runtimeFromContext.authToken),
+        runtimeFromDom.authToken,
+        runtimeFromWindow.authToken,
+      ),
+    };
+  };
+
+  const resolveEffectiveGraphqlConfig = (): GraphqlConfig => {
+    const runtime = resolveRuntimeGraphql();
+    return {
+      ...props.graphql,
+      httpUrl: runtime.httpUrl,
+      wsUrl: runtime.wsUrl,
+      authToken: runtime.authToken,
+    };
+  };
+
   const clearActiveSubscription = () => {
     if (activeDispose) {
       activeDispose();
@@ -596,8 +730,8 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
   const subscribeForStream = async (
     requestId: string,
     assistantBody: HTMLDivElement | null,
+    graphql: GraphqlConfig,
   ): Promise<void> => {
-    const graphql = props.graphql;
     if (!graphql.wsUrl) {
       throw new Error("Missing graphql.wsUrl.");
     }
@@ -731,16 +865,17 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
   const submitMessage = async (text: string) => {
     appendLine("user", text);
     emitEvent(ctx, "mfe.example.chat.submitted", { text, mode: "graphql-stream" });
+    const graphql = resolveEffectiveGraphqlConfig();
 
     if (!props.async.enabled || props.async.mode === "none") {
       appendLine("system", "Async disabled. Enable props.async for GraphQL stream mode.");
       return;
     }
-    if (!props.graphql.httpUrl) {
+    if (!graphql.httpUrl) {
       appendLine("system", "Missing graphql.httpUrl in module props.");
       return;
     }
-    if (!props.graphql.wsUrl) {
+    if (!graphql.wsUrl) {
       appendLine("system", "Missing graphql.wsUrl in module props.");
       return;
     }
@@ -750,9 +885,9 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       setPending(true);
       setStatus("Submitting prompt...");
 
-      const submitVariables = applyTemplate(props.graphql.submitVariables, {
+      const submitVariables = applyTemplate(graphql.submitVariables, {
         prompt: text,
-        conversationId: props.graphql.conversationId,
+        conversationId: graphql.conversationId,
         moduleKey: ctx.moduleKey,
         instanceId: ctx.instanceId,
         cacheKey: ctx.environment.cacheKey || "",
@@ -761,20 +896,20 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       });
 
       const submitData = await executeGraphqlHttp<Record<string, unknown>>(
-        props.graphql.httpUrl,
-        props.graphql.submitMutation,
+        graphql.httpUrl,
+        graphql.submitMutation,
         submitVariables,
-        props.graphql.authToken,
+        graphql.authToken,
         ctx.signal,
       );
 
-      const requestId = asString(getPathValue(submitData, props.graphql.submitRequestIdPath)).trim();
+      const requestId = asString(getPathValue(submitData, graphql.submitRequestIdPath)).trim();
       if (!requestId) {
-        throw new Error(`Submit response missing request id at path '${props.graphql.submitRequestIdPath}'.`);
+        throw new Error(`Submit response missing request id at path '${graphql.submitRequestIdPath}'.`);
       }
 
       setStatus(`Request accepted (${requestId}). Listening for stream...`);
-      await subscribeForStream(requestId, assistantBody);
+      await subscribeForStream(requestId, assistantBody, graphql);
       setStatus("Response stream completed.");
       emitEvent(ctx, "mfe.example.chat.responded", {
         requestId,

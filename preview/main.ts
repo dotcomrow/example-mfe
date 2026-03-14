@@ -27,6 +27,50 @@ const AUTH_TOKEN_STORAGE_KEY = "mfe.preview.authToken";
 const AUTH_FORM_STORAGE_KEY = "mfe.preview.authFormState";
 const PKCE_SESSION_STORAGE_KEY = "mfe.preview.pkceSessionState";
 const PKCE_MAX_AGE_MS = 10 * 60 * 1000;
+const DEFAULT_PREVIEW_GRAPHQL_HTTP_URLS = {
+  dev: "https://cf-suncoast-graphql-proxy.dev.suncoast.systems/graphql",
+  prod: "https://cf-suncoast-graphql-proxy.prod.suncoast.systems/graphql",
+} as const;
+
+function inferPreviewEnvironment(): "dev" | "prod" {
+  const hostname = window.location.hostname.trim().toLowerCase();
+  if (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname.endsWith(".dev.suncoast.systems") ||
+    hostname.includes("preview")
+  ) {
+    return "dev";
+  }
+  return "prod";
+}
+
+function toWebSocketUrl(httpUrl: string): string {
+  const normalized = httpUrl.trim();
+  if (!normalized) {
+    return "";
+  }
+  try {
+    const parsed = new URL(normalized);
+    parsed.protocol = parsed.protocol === "http:" ? "ws:" : "wss:";
+    return parsed.toString();
+  } catch {
+    if (normalized.startsWith("https://")) {
+      return `wss://${normalized.slice("https://".length)}`;
+    }
+    if (normalized.startsWith("http://")) {
+      return `ws://${normalized.slice("http://".length)}`;
+    }
+    return normalized;
+  }
+}
+
+function inferDefaultGraphqlHttpUrl(): string {
+  const environment = inferPreviewEnvironment();
+  return environment === "dev"
+    ? DEFAULT_PREVIEW_GRAPHQL_HTTP_URLS.dev
+    : DEFAULT_PREVIEW_GRAPHQL_HTTP_URLS.prod;
+}
 
 function getInput(id: string): HTMLInputElement {
   const element = document.getElementById(id);
@@ -74,8 +118,8 @@ const clearTokenButton = getButton("clearTokenButton");
 const authStatus = getAuthStatusElement();
 const host = getHost();
 
-httpUrlInput.value = buildEnvDefaults.graphqlHttpUrl;
-wsUrlInput.value = buildEnvDefaults.graphqlWsUrl;
+httpUrlInput.value = inferDefaultGraphqlHttpUrl();
+wsUrlInput.value = toWebSocketUrl(httpUrlInput.value);
 authIssuerInput.value = buildEnvDefaults.previewAuthIssuerUrl || "https://auth.suncoast.systems";
 authClientIdInput.value = buildEnvDefaults.previewAuthClientId;
 authAudienceInput.value = buildEnvDefaults.previewAuthAudience;
@@ -86,7 +130,7 @@ let currentAbort: AbortController | null = null;
 let currentCleanup: Cleanup;
 
 loadSavedAuthForm();
-authTokenInput.value = getSavedToken() || buildEnvDefaults.graphqlAuthToken;
+authTokenInput.value = getSavedToken();
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {

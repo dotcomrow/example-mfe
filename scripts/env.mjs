@@ -22,12 +22,6 @@ export function readEnvironment(mode = "production") {
   }
 
   return {
-    MFE_DEFAULT_GRAPHQL_HTTP_URL:
-      process.env.MFE_DEFAULT_GRAPHQL_HTTP_URL ?? loaded.MFE_DEFAULT_GRAPHQL_HTTP_URL ?? "",
-    MFE_DEFAULT_GRAPHQL_WS_URL:
-      process.env.MFE_DEFAULT_GRAPHQL_WS_URL ?? loaded.MFE_DEFAULT_GRAPHQL_WS_URL ?? "",
-    MFE_DEFAULT_GRAPHQL_AUTH_TOKEN:
-      process.env.MFE_DEFAULT_GRAPHQL_AUTH_TOKEN ?? loaded.MFE_DEFAULT_GRAPHQL_AUTH_TOKEN ?? "",
     MFE_PREVIEW_AUTH_ISSUER_URL:
       process.env.MFE_PREVIEW_AUTH_ISSUER_URL ??
       loaded.MFE_PREVIEW_AUTH_ISSUER_URL ??
@@ -44,9 +38,6 @@ export function readEnvironment(mode = "production") {
 
 export function asEsbuildDefines(env) {
   return {
-    __MFE_DEFAULT_GRAPHQL_HTTP_URL__: JSON.stringify(env.MFE_DEFAULT_GRAPHQL_HTTP_URL),
-    __MFE_DEFAULT_GRAPHQL_WS_URL__: JSON.stringify(env.MFE_DEFAULT_GRAPHQL_WS_URL),
-    __MFE_DEFAULT_GRAPHQL_AUTH_TOKEN__: JSON.stringify(env.MFE_DEFAULT_GRAPHQL_AUTH_TOKEN),
     __MFE_PREVIEW_AUTH_ISSUER_URL__: JSON.stringify(env.MFE_PREVIEW_AUTH_ISSUER_URL),
     __MFE_PREVIEW_AUTH_CLIENT_ID__: JSON.stringify(env.MFE_PREVIEW_AUTH_CLIENT_ID),
     __MFE_PREVIEW_AUTH_AUDIENCE__: JSON.stringify(env.MFE_PREVIEW_AUTH_AUDIENCE),

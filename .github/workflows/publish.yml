@@ -7,6 +7,10 @@ on:
         description: "Build mode (production/local)"
         required: false
         default: "production"
+      module_channel:
+        description: "Catalog channel (preview/prod)"
+        required: false
+        default: "preview"
   push:
     tags:
       - "v*"
@@ -18,12 +22,14 @@ jobs:
       contents: write
     env:
       MFE_BUILD_MODE: ${{ inputs.build_mode || 'production' }}
-      MFE_DEFAULT_GRAPHQL_HTTP_URL: ${{ secrets.MFE_DEFAULT_GRAPHQL_HTTP_URL }}
-      MFE_DEFAULT_GRAPHQL_WS_URL: ${{ secrets.MFE_DEFAULT_GRAPHQL_WS_URL }}
-      MFE_DEFAULT_GRAPHQL_AUTH_TOKEN: ${{ secrets.MFE_DEFAULT_GRAPHQL_AUTH_TOKEN }}
-      DIRECTUS_BASE_URL: ${{ secrets.DIRECTUS_BASE_URL }}
-      DIRECTUS_STATIC_TOKEN: ${{ secrets.DIRECTUS_STATIC_TOKEN }}
-      DIRECTUS_MODULE_SITE_KEY: ${{ secrets.DIRECTUS_MODULE_SITE_KEY }}
+      MODULE_REGISTRY_SERVICE_URL: ${{ vars.MODULE_REGISTRY_SERVICE_URL || secrets.MODULE_REGISTRY_SERVICE_URL }}
+      MODULE_REGISTRY_SERVICE_URL_PREVIEW: ${{ vars.MODULE_REGISTRY_SERVICE_URL_PREVIEW || secrets.MODULE_REGISTRY_SERVICE_URL_PREVIEW }}
+      MODULE_REGISTRY_SERVICE_URL_PROD: ${{ vars.MODULE_REGISTRY_SERVICE_URL_PROD || vars.MODULE_REGISTRY_SERVICE_URL_PRODUCTION || secrets.MODULE_REGISTRY_SERVICE_URL_PROD || secrets.MODULE_REGISTRY_SERVICE_URL_PRODUCTION }}
+      MODULE_REGISTRY_SERVICE_PUBLISH_PATH: ${{ vars.MODULE_REGISTRY_SERVICE_PUBLISH_PATH || '/v1/modules/publish' }}
+      MODULE_REGISTRY_SERVICE_GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.MODULE_REGISTRY_SERVICE_GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+      MODULE_REGISTRY_SERVICE_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.MODULE_REGISTRY_SERVICE_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
+      MODULE_REGISTRY_SERVICE_GOOGLE_TOKEN_AUDIENCE: ${{ secrets.MODULE_REGISTRY_SERVICE_GOOGLE_TOKEN_AUDIENCE }}
+      MODULE_CHANNEL_OVERRIDE: ${{ inputs.module_channel || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -40,46 +46,78 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Resolve Bundle URL
-        id: bundle
+      - name: Resolve Publish Metadata
+        id: meta
         shell: bash
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            TAG="${GITHUB_REF_NAME}"
-            URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/example-mfe.js"
-            echo "bundle_url=${URL}" >> "$GITHUB_OUTPUT"
+            echo "module_version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            if [[ -n "${MODULE_CHANNEL_OVERRIDE}" ]]; then
+              echo "module_channel=${MODULE_CHANNEL_OVERRIDE}" >> "$GITHUB_OUTPUT"
+            else
+              echo "module_channel=prod" >> "$GITHUB_OUTPUT"
+            fi
           else
-            echo "bundle_url=" >> "$GITHUB_OUTPUT"
+            echo "module_version=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+            if [[ -n "${MODULE_CHANNEL_OVERRIDE}" ]]; then
+              echo "module_channel=${MODULE_CHANNEL_OVERRIDE}" >> "$GITHUB_OUTPUT"
+            else
+              echo "module_channel=preview" >> "$GITHUB_OUTPUT"
+            fi
           fi
+
+      - name: Resolve Module Registry URL
+        id: registry_url
+        shell: bash
+        run: |
+          CHANNEL="${{ steps.meta.outputs.module_channel }}"
+          if [[ "${CHANNEL}" == "prod" ]]; then
+            TARGET_URL="${MODULE_REGISTRY_SERVICE_URL_PROD:-${MODULE_REGISTRY_SERVICE_URL}}"
+          else
+            TARGET_URL="${MODULE_REGISTRY_SERVICE_URL_PREVIEW:-${MODULE_REGISTRY_SERVICE_URL}}"
+          fi
+
+          echo "module_channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+          echo "registry_service_url=${TARGET_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare Module Publish Manifest
+        id: registry
+        env:
+          MODULE_VERSION: ${{ steps.meta.outputs.module_version }}
+          MFE_RELEASE_TAG: ${{ github.ref_name }}
+          MFE_RELEASE_SHA: ${{ github.sha }}
+        run: npm run publish:registry
+
+      - name: Notify Module Registry Service
+        if: ${{ steps.registry.outcome == 'success' && steps.registry_url.outputs.registry_service_url != '' }}
+        env:
+          MODULE_REGISTRY_SERVICE_URL: ${{ steps.registry_url.outputs.registry_service_url }}
+          MODULE_PUBLISH_MANIFEST_PATH: dist/module.publish.json
+          MODULE_CHANNEL: ${{ steps.registry_url.outputs.module_channel }}
+        run: npm run notify:catalog
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: example-mfe-dist
+          if-no-files-found: warn
           path: |
             dist/example-mfe.js
             dist/example-mfe.js.map
             dist/module.definition.json
+            dist/module.publish.json
             directus/cms-module.seed.json
             directus/cms-block-module.props.example.json
-
-      - name: Sync Module To Directus
-        if: ${{ env.DIRECTUS_BASE_URL != '' && env.DIRECTUS_STATIC_TOKEN != '' }}
-        env:
-          MODULE_SITE_KEY: ${{ env.DIRECTUS_MODULE_SITE_KEY }}
-          MODULE_STATUS: published
-          MODULE_REFRESH_TARGET: both
-          MFE_MODULE_VERSION: ${{ github.ref_name }}
-          MFE_BUNDLE_URL: ${{ steps.bundle.outputs.bundle_url }}
-        run: npm run sync:directus
 
       - name: Create GitHub Release (tag pushes)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
         with:
+          fail_on_unmatched_files: false
           files: |
             dist/example-mfe.js
             dist/example-mfe.js.map
             dist/module.definition.json
+            dist/module.publish.json
             directus/cms-module.seed.json
             directus/cms-block-module.props.example.json

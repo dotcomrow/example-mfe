@@ -6,8 +6,8 @@
   "maxMessages": 40,
   "requestCommand": "mfe.example.chat.send",
   "graphql": {
-    "httpUrl": "https://YOUR_GRAPHQL_GATEWAY/v1/graphql",
-    "wsUrl": "wss://YOUR_GRAPHQL_GATEWAY/v1/graphql",
+    "httpUrl": "",
+    "wsUrl": "",
     "authToken": "",
     "submitMutation": "mutation PublishAsyncRequest($input: json!) { publish_async_request(input: $input) }",
     "submitVariables": {

@@ -33,26 +33,24 @@ Build output:
 - `dist/example-mfe.js.map`
 - `dist/module.definition.json`
 
-## Local vs Production GraphQL Endpoints
+## GraphQL Runtime Configuration
 
-The bundle supports build-time default GraphQL endpoint values.
+GraphQL endpoint/token values are runtime-resolved. They are not baked into the built bundle.
+
+Resolution order:
+
+1. `props.graphql.*` from CMS block config
+2. Shell runtime values (`#cms-root` data attrs / `window.__SUNCOAST_RUNTIME__.graphql`)
+3. Browser auth storage fallback for token (for preview helper flows)
 
 Local preview:
 
 1. Copy `.env.local.example` to `.env.local`
-2. Set test endpoints
+2. Set optional preview auth values
 3. Run `npm run dev`
-
-Production build:
-
-1. Copy `.env.production.example` to `.env.production` (or use CI secrets)
-2. Run `npm run build`
 
 Supported env vars:
 
-- `MFE_DEFAULT_GRAPHQL_HTTP_URL`
-- `MFE_DEFAULT_GRAPHQL_WS_URL`
-- `MFE_DEFAULT_GRAPHQL_AUTH_TOKEN`
 - `MFE_PREVIEW_AUTH_ISSUER_URL` (preview login default, usually `https://auth.suncoast.systems`)
 - `MFE_PREVIEW_AUTH_CLIENT_ID` (preview login client id)
 - `MFE_PREVIEW_AUTH_AUDIENCE` (preview login audience, optional)
@@ -85,8 +83,8 @@ If your auth provider returns `access_token` in URL hash (implicit flow), the pr
 3. In a `cms_block_module` block, choose module key `mfe-example-chat`.
 4. Use `directus/cms-block-module.props.example.json` as your `props_json` baseline.
 5. Set:
-   - `graphql.httpUrl` (Hasura/GraphQL gateway HTTP endpoint)
-   - `graphql.wsUrl` (GraphQL WS endpoint)
+   - optional `graphql.httpUrl` and `graphql.wsUrl` overrides (leave unset to use shell runtime defaults)
+   - optional `graphql.authToken` override (usually leave unset and let shell runtime auth provide token)
    - `graphql.submitMutation` and `graphql.streamSubscription` (defaults are preconfigured for `publish_async_request` + `graphql_client_async_messages`)
    - path mappings:
      - `graphql.submitRequestIdPath`
@@ -94,29 +92,46 @@ If your auth provider returns `access_token` in URL hash (implicit flow), the pr
      - `graphql.streamDonePath`
      - `graphql.streamErrorPath`
 
-If those fields are omitted in `props_json`, the MFE falls back to build-time defaults from env.
+## Automated Registry Publish (No Directus/GitOps PR Required)
 
-## Automated Directus Sync (No Manual Collection Edits)
+`publish.yml` now publishes module artifacts directly to the module registry service `POST /v1/modules/publish` using multipart upload.
 
-`publish.yml` now supports automatic `cms_modules` upsert in Directus:
+1. Add repository variable(s) or secret(s):
+   - `MODULE_REGISTRY_SERVICE_URL_PREVIEW`
+   - `MODULE_REGISTRY_SERVICE_URL_PROD`
+   - optional legacy fallback: `MODULE_REGISTRY_SERVICE_URL`
+2. Add repository secrets for module registry publish API auth:
+   - `MODULE_REGISTRY_SERVICE_GOOGLE_SERVICE_ACCOUNT_EMAIL`
+   - `MODULE_REGISTRY_SERVICE_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+   - `MODULE_REGISTRY_SERVICE_GOOGLE_TOKEN_AUDIENCE`
+3. Optional repository variable:
+   - `MODULE_REGISTRY_SERVICE_PUBLISH_PATH` (default `/v1/modules/publish`)
+4. Publish tag `v*` (or run Publish workflow manually).
+5. Workflow will:
+   - build artifacts
+   - run `npm run publish:registry` to generate `dist/module.publish.json`
+   - run `npm run notify:catalog` to upload `dist/example-mfe.js` and `dist/module.publish.json` to the registry service
+   - attach release artifacts in GitHub
 
-1. Add repository secrets:
-   - `DIRECTUS_BASE_URL` (example: `https://cms.example.com`)
-   - `DIRECTUS_STATIC_TOKEN` (service token with write access to `cms_modules`)
-   - optional: `DIRECTUS_MODULE_SITE_KEY` (leave unset for global module)
-2. Publish tag `v*` (or run Publish workflow manually).
-3. Workflow will:
-   - build artifact
-   - compute release bundle URL for tag builds
-   - run `npm run sync:directus` to upsert module record from `directus/cms-module.seed.json`
-   - attach release artifacts
+`publish:registry` writes metadata in `dist/module.publish.json`:
 
-The sync script stores publish metadata in:
+- `module_version`
+- `published_at`
+- `release.tag`
+- `release.sha`
+- `bundle.sha256`
+- full `definition` + `seed` documents
 
-- `default_props.__mfe_release.bundleUrl`
-- `default_props.__mfe_release.moduleVersion`
-- `default_props.__mfe_release.releaseTag`
-- `default_props.__mfe_release.releaseSha`
+Module registry service endpoint called by workflow:
+
+- `POST <resolved-service-url><MODULE_REGISTRY_SERVICE_PUBLISH_PATH>`
+- Default path: `/v1/modules/publish`
+- Channel defaults:
+  - tag publish: `prod`
+  - manual publish: `preview` (override via workflow input `module_channel`)
+- Service URL selection:
+  - `prod` channel: `MODULE_REGISTRY_SERVICE_URL_PROD` then fallback `MODULE_REGISTRY_SERVICE_URL`
+  - `preview` channel: `MODULE_REGISTRY_SERVICE_URL_PREVIEW` then fallback `MODULE_REGISTRY_SERVICE_URL`
 
 ## Important Runtime Note
 
@@ -137,7 +152,9 @@ The bundle also self-registers at:
 - `npm run typecheck` - TS type check
 - `npm run build` - compile single JS + copy module definition
 - `npm run dev` - local preview server with live rebuild + preview harness
-- `npm run sync:directus` - upsert `cms_modules` record in Directus from seed file
+- `npm run publish:registry` - generate local publish manifest from built artifacts
+- `npm run notify:catalog` - upload built bundle + publish manifest to module registry API
+- `npm run sync:directus` - direct Directus upsert (optional; only if network access exists)
 
 ## GitHub Actions
 
@@ -148,15 +165,19 @@ Workflows included:
   - uploads dist artifacts
 - `.github/workflows/publish.yml`
   - runs on `v*` tags or manual dispatch
-  - builds with production defaults from GitHub Secrets
+  - builds bundle + publish metadata
   - uploads artifacts
   - creates a GitHub Release for tag pushes
 
 Secrets expected by publish workflow:
 
-- `MFE_DEFAULT_GRAPHQL_HTTP_URL`
-- `MFE_DEFAULT_GRAPHQL_WS_URL`
-- `MFE_DEFAULT_GRAPHQL_AUTH_TOKEN`
-- `DIRECTUS_BASE_URL`
-- `DIRECTUS_STATIC_TOKEN`
-- `DIRECTUS_MODULE_SITE_KEY` (optional)
+- `MODULE_REGISTRY_SERVICE_GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `MODULE_REGISTRY_SERVICE_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+- `MODULE_REGISTRY_SERVICE_GOOGLE_TOKEN_AUDIENCE`
+
+Repository variables used by publish workflow:
+
+- `MODULE_REGISTRY_SERVICE_URL_PREVIEW`
+- `MODULE_REGISTRY_SERVICE_URL_PROD`
+- `MODULE_REGISTRY_SERVICE_URL` (legacy fallback)
+- `MODULE_REGISTRY_SERVICE_PUBLISH_PATH` (optional, default `/v1/modules/publish`)

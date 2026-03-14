@@ -41,8 +41,6 @@ const serveResult = await previewContext.serve({
 console.log("");
 console.log("[example-mfe] local preview running");
 console.log(`  URL: http://localhost:${serveResult.port}/preview/`);
-console.log(`  GraphQL HTTP default: ${env.MFE_DEFAULT_GRAPHQL_HTTP_URL || "(not set)"}`);
-console.log(`  GraphQL WS default:   ${env.MFE_DEFAULT_GRAPHQL_WS_URL || "(not set)"}`);
 console.log("");
 
 const shutdown = async () => {
