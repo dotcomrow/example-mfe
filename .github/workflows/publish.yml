@@ -31,14 +31,30 @@ jobs:
       MODULE_REGISTRY_SERVICE_GOOGLE_TOKEN_AUDIENCE: ${{ secrets.MODULE_REGISTRY_SERVICE_GOOGLE_TOKEN_AUDIENCE }}
       MODULE_CHANNEL_OVERRIDE: ${{ inputs.module_channel || '' }}
     steps:
+      - name: Preflight Runner Tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for cmd in git node npm; do
+            if ! command -v "${cmd}" >/dev/null 2>&1; then
+              echo "Required command '${cmd}' is missing on this self-hosted runner."
+              exit 1
+            fi
+          done
+
+          NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+          if [[ "${NODE_MAJOR}" -lt 20 ]]; then
+            echo "Node.js 20+ is required. Found: $(node -v)"
+            exit 1
+          fi
+
+          echo "Runner tooling check passed."
+          echo "Node: $(node -v)"
+          echo "npm: $(npm -v)"
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Setup Node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
-        with:
-          node-version: "20"
-          cache: "npm"
 
       - name: Install
         run: npm ci
