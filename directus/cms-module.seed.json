@@ -414,8 +414,8 @@
     "maxMessages": 20,
     "requestCommand": "mfe.example.chat.send",
     "graphql": {
-      "httpUrl": "https://your-graphql-gateway.example.com/v1/graphql",
-      "wsUrl": "wss://your-graphql-gateway.example.com/v1/graphql",
+      "httpUrl": "https://cf-suncoast-graphql-proxy.prod.suncoast.systems/graphql",
+      "wsUrl": "wss://cf-suncoast-graphql-proxy.prod.suncoast.systems/graphql",
       "authToken": "",
       "submitMutation": "mutation PublishAsyncRequest($input: json!) { publish_async_request(input: $input) }",
       "submitVariables": {
