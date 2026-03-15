@@ -484,7 +484,10 @@ async function mountFromForm() {
     requestCommand: "mfe.example.chat.send",
     async: {
       enabled: true,
-      mode: "mixed",
+      mode: "kafka-graphql-bridge",
+      requestChannel: "graphql.async.requests.v1",
+      responseChannel: "graphql.async.responses.v1",
+      correlationIdPath: "publish_async_request.request_id",
     },
     graphql: {
       httpUrl: httpUrlInput.value.trim(),
@@ -504,6 +507,10 @@ async function mountFromForm() {
             moduleKey: "{{moduleKey}}",
             instanceId: "{{instanceId}}",
             source: "{{source}}",
+            asyncMode: "{{asyncMode}}",
+            requestChannel: "{{requestChannel}}",
+            responseChannel: "{{responseChannel}}",
+            correlationIdPath: "{{correlationIdPath}}",
           },
           expires_in_seconds: 86400,
         },
@@ -513,6 +520,7 @@ async function mountFromForm() {
         "subscription StreamClientAsyncMessage($requestId: String!) { graphql_client_async_messages(where: { request_id: { _eq: $requestId } }, order_by: { updated_at: desc }, limit: 1) { request_id status response_payload error_payload completed_at updated_at } }",
       streamVariables: {
         requestId: "{{requestId}}",
+        responseChannel: "{{responseChannel}}",
       },
       streamTextPath: "graphql_client_async_messages.0.response_payload",
       streamDonePath: "graphql_client_async_messages.0.status",

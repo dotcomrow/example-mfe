@@ -2,7 +2,13 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export type JsonObject = { [key: string]: JsonValue };
 
-export type AsyncMode = "none" | "request-response" | "subscribe" | "mixed";
+export type AsyncMode =
+  | "none"
+  | "request-response"
+  | "subscribe"
+  | "mixed"
+  | "graphql-stream"
+  | "kafka-graphql-bridge";
 
 export type ModuleRetryPolicy = {
   maxAttempts: number;
@@ -14,6 +20,9 @@ export type ModuleRetryPolicy = {
 export type ModuleAsyncConfig = {
   enabled: boolean;
   mode: AsyncMode;
+  requestChannel: string;
+  responseChannel: string;
+  correlationIdPath: string;
   request: {
     supported: boolean;
     defaultTimeoutMs: number;

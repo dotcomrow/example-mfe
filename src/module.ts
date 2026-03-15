@@ -39,7 +39,10 @@ type ChatProps = {
 
 const defaultAsyncConfig: ModuleAsyncConfig = {
   enabled: true,
-  mode: "mixed",
+  mode: "kafka-graphql-bridge",
+  requestChannel: "graphql.async.requests.v1",
+  responseChannel: "graphql.async.responses.v1",
+  correlationIdPath: "publish_async_request.request_id",
   request: {
     supported: true,
     defaultTimeoutMs: 30000,
@@ -320,7 +323,9 @@ function asAsyncMode(value: unknown): ModuleAsyncConfig["mode"] {
     normalized === "none" ||
     normalized === "request-response" ||
     normalized === "subscribe" ||
-    normalized === "mixed"
+    normalized === "mixed" ||
+    normalized === "graphql-stream" ||
+    normalized === "kafka-graphql-bridge"
   ) {
     return normalized;
   }
@@ -346,10 +351,24 @@ export function normalizeAsyncConfig(
   const request = asRecord(record.request);
   const stream = asRecord(record.stream);
   const queue = asRecord(record.queue);
+  const mode = asAsyncMode(record.mode || base.mode);
+  const streamTransportFallback = mode === "kafka-graphql-bridge" ? "kafka-bridge" : base.stream.transport;
 
   return {
     enabled: asBoolean(record.enabled, base.enabled),
-    mode: asAsyncMode(record.mode || base.mode),
+    mode,
+    requestChannel: asString(
+      record.requestChannel || record.request_channel,
+      base.requestChannel,
+    ).trim(),
+    responseChannel: asString(
+      record.responseChannel || record.response_channel,
+      base.responseChannel,
+    ).trim(),
+    correlationIdPath: asString(
+      record.correlationIdPath || record.correlation_id_path,
+      base.correlationIdPath,
+    ).trim(),
     request: {
       supported: asBoolean(request.supported, base.request.supported),
       defaultTimeoutMs: asInteger(
@@ -363,7 +382,7 @@ export function normalizeAsyncConfig(
     stream: {
       supported: asBoolean(stream.supported, base.stream.supported),
       transport: ((): ModuleAsyncConfig["stream"]["transport"] => {
-        const transport = asString(stream.transport, base.stream.transport).toLowerCase();
+        const transport = asString(stream.transport, streamTransportFallback).toLowerCase();
         if (
           transport === "none" ||
           transport === "graphql-ws" ||
@@ -488,6 +507,39 @@ function getPathValue(data: unknown, path: string): unknown {
   return current;
 }
 
+function resolveRequestIdFromPaths(
+  payload: unknown,
+  candidatePaths: string[],
+): { requestId: string; path: string } {
+  for (const candidatePath of candidatePaths) {
+    const path = asString(candidatePath).trim();
+    if (!path) {
+      continue;
+    }
+    const requestId = asString(getPathValue(payload, path)).trim();
+    if (requestId) {
+      return { requestId, path };
+    }
+  }
+  return { requestId: "", path: "" };
+}
+
+function formatAsyncChannelSummary(config: ModuleAsyncConfig): string {
+  const requestChannel = asString(config.requestChannel).trim();
+  const responseChannel = asString(config.responseChannel).trim();
+  if (!requestChannel && !responseChannel) {
+    return "";
+  }
+  const parts: string[] = [];
+  if (requestChannel) {
+    parts.push(`req:${requestChannel}`);
+  }
+  if (responseChannel) {
+    parts.push(`resp:${responseChannel}`);
+  }
+  return parts.join(" / ");
+}
+
 function emitEvent(ctx: ModuleContext, type: string, payload: JsonObject) {
   if (!ctx.emit) {
     return;
@@ -502,11 +554,16 @@ function emitEvent(ctx: ModuleContext, type: string, payload: JsonObject) {
   ctx.emit(event);
 }
 
-function normalizeGraphqlConfig(rawProps: Record<string, unknown>): GraphqlConfig {
+function normalizeGraphqlConfig(rawProps: Record<string, unknown>, asyncConfig: ModuleAsyncConfig): GraphqlConfig {
   const graphql = asRecord(rawProps.graphql);
   const chunkModeRaw = asString(graphql.streamChunkMode || graphql.stream_chunk_mode || "append")
     .trim()
     .toLowerCase();
+  const submitRequestIdPath = firstNonEmpty(
+    asString(graphql.submitRequestIdPath || graphql.submit_request_id_path).trim(),
+    asString(asyncConfig.correlationIdPath).trim(),
+    "publish_async_request.request_id",
+  );
 
   return {
     httpUrl: asString(graphql.httpUrl || graphql.http_url).trim(),
@@ -528,18 +585,25 @@ function normalizeGraphqlConfig(rawProps: Record<string, unknown>): GraphqlConfi
             source: "{{source}}",
             cacheKey: "{{cacheKey}}",
             contentHash: "{{contentHash}}",
+            asyncMode: "{{asyncMode}}",
+            requestChannel: "{{requestChannel}}",
+            responseChannel: "{{responseChannel}}",
+            correlationIdPath: "{{correlationIdPath}}",
           },
           expires_in_seconds: 86400,
         },
       },
     ),
-    submitRequestIdPath:
-      asString(graphql.submitRequestIdPath, "publish_async_request.request_id").trim() ||
-      "publish_async_request.request_id",
+    submitRequestIdPath,
     streamSubscription:
       asString(graphql.streamSubscription, defaultStreamSubscription).trim() ||
       defaultStreamSubscription,
-    streamVariables: parseTemplateValue(graphql.streamVariables ?? { requestId: "{{requestId}}" }),
+    streamVariables: parseTemplateValue(
+      graphql.streamVariables ?? {
+        requestId: "{{requestId}}",
+        responseChannel: "{{responseChannel}}",
+      },
+    ),
     streamTextPath:
       asString(graphql.streamTextPath, "graphql_client_async_messages.0.response_payload").trim() ||
       "graphql_client_async_messages.0.response_payload",
@@ -561,6 +625,7 @@ export function resolveChatProps(rawProps: unknown, inheritedAsync?: ModuleAsync
   const defaultSubmit = "Submit";
   const defaultAssistant = "Assistant";
   const defaultCommand = "mfe.example.chat.send";
+  const normalizedAsync = normalizeAsyncConfig(props.async, inheritedAsync);
 
   return {
     title: asString(props.title, defaultTitle).trim() || defaultTitle,
@@ -569,8 +634,8 @@ export function resolveChatProps(rawProps: unknown, inheritedAsync?: ModuleAsync
     assistantLabel: asString(props.assistantLabel, defaultAssistant).trim() || defaultAssistant,
     maxMessages: asInteger(props.maxMessages, 20, 1, 200),
     requestCommand: asString(props.requestCommand, defaultCommand).trim() || defaultCommand,
-    async: normalizeAsyncConfig(props.async, inheritedAsync),
-    graphql: normalizeGraphqlConfig(props),
+    async: normalizedAsync,
+    graphql: normalizeGraphqlConfig(props, normalizedAsync),
   };
 }
 
@@ -744,6 +809,10 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       cacheKey: ctx.environment.cacheKey || "",
       contentHash: ctx.environment.contentHash || "",
       source: ctx.environment.source || "",
+      asyncMode: props.async.mode,
+      requestChannel: props.async.requestChannel || "",
+      responseChannel: props.async.responseChannel || "",
+      correlationIdPath: props.async.correlationIdPath || "",
     });
     const streamVariables = asRecord(templateVariables);
 
@@ -864,7 +933,12 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
 
   const submitMessage = async (text: string) => {
     appendLine("user", text);
-    emitEvent(ctx, "mfe.example.chat.submitted", { text, mode: "graphql-stream" });
+    emitEvent(ctx, "mfe.example.chat.submitted", {
+      text,
+      mode: asString(props.async.mode) || defaultAsyncConfig.mode,
+      requestChannel: props.async.requestChannel || "",
+      responseChannel: props.async.responseChannel || "",
+    });
     const graphql = resolveEffectiveGraphqlConfig();
 
     if (!props.async.enabled || props.async.mode === "none") {
@@ -893,6 +967,10 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
         cacheKey: ctx.environment.cacheKey || "",
         contentHash: ctx.environment.contentHash || "",
         source: ctx.environment.source || "",
+        asyncMode: props.async.mode,
+        requestChannel: props.async.requestChannel || "",
+        responseChannel: props.async.responseChannel || "",
+        correlationIdPath: props.async.correlationIdPath || "",
       });
 
       const submitData = await executeGraphqlHttp<Record<string, unknown>>(
@@ -903,17 +981,36 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
         ctx.signal,
       );
 
-      const requestId = asString(getPathValue(submitData, graphql.submitRequestIdPath)).trim();
+      const requestIdCandidatePaths = Array.from(
+        new Set([
+          graphql.submitRequestIdPath,
+          props.async.correlationIdPath,
+          "publish_async_request.request_id",
+          "requestId",
+        ].map((entry) => asString(entry).trim()).filter(Boolean)),
+      );
+      const requestIdResolution = resolveRequestIdFromPaths(submitData, requestIdCandidatePaths);
+      const requestId = requestIdResolution.requestId;
       if (!requestId) {
-        throw new Error(`Submit response missing request id at path '${graphql.submitRequestIdPath}'.`);
+        throw new Error(
+          `Submit response missing request id. Tried paths: ${requestIdCandidatePaths.join(", ") || "(none)"}.`,
+        );
       }
 
-      setStatus(`Request accepted (${requestId}). Listening for stream...`);
+      const resolvedRequestIdPath = requestIdResolution.path || graphql.submitRequestIdPath;
+      const channelSummary = formatAsyncChannelSummary(props.async);
+      setStatus(
+        `Request accepted (${requestId}). Listening for stream via '${resolvedRequestIdPath}'${
+          channelSummary ? ` [${channelSummary}]` : ""
+        }...`,
+      );
       await subscribeForStream(requestId, assistantBody, graphql);
       setStatus("Response stream completed.");
       emitEvent(ctx, "mfe.example.chat.responded", {
         requestId,
-        source: "graphql-stream",
+        source: asString(props.async.mode) || defaultAsyncConfig.mode,
+        requestChannel: props.async.requestChannel || "",
+        responseChannel: props.async.responseChannel || "",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown stream error";
@@ -958,7 +1055,14 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     statusEl = document.createElement("div");
     statusEl.style.fontSize = "0.78rem";
     statusEl.style.color = "#64748b";
-    setStatus(`Async mode: ${props.async.mode} (${props.async.stream.transport})`);
+    {
+      const channelSummary = formatAsyncChannelSummary(props.async);
+      setStatus(
+        `Async mode: ${props.async.mode} (${props.async.stream.transport})${
+          channelSummary ? ` [${channelSummary}]` : ""
+        }`,
+      );
+    }
 
     header.append(titleEl, statusEl);
 

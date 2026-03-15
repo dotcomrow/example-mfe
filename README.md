@@ -86,11 +86,18 @@ If your auth provider returns `access_token` in URL hash (implicit flow), the pr
    - optional `graphql.httpUrl` and `graphql.wsUrl` overrides (leave unset to use shell runtime defaults)
    - optional `graphql.authToken` override (usually leave unset and let shell runtime auth provide token)
    - `graphql.submitMutation` and `graphql.streamSubscription` (defaults are preconfigured for `publish_async_request` + `graphql_client_async_messages`)
+   - optional async transport hints:
+     - `async.mode` (`none`, `graphql-stream`, `kafka-graphql-bridge`, `request-response`, `subscribe`, `mixed`)
+     - `async.requestChannel`
+     - `async.responseChannel`
+     - `async.correlationIdPath`
    - path mappings:
      - `graphql.submitRequestIdPath`
      - `graphql.streamTextPath`
      - `graphql.streamDonePath`
      - `graphql.streamErrorPath`
+
+`async.requestChannel`, `async.responseChannel`, and `async.correlationIdPath` are consumed by this example MFE and injected into submit/stream template variables and emitted events.
 
 ## Automated Registry Publish (No Directus/GitOps PR Required)
 
