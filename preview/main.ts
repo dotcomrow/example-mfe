@@ -517,7 +517,7 @@ async function mountFromForm() {
       },
       submitRequestIdPath: "publish_async_request.request_id",
       streamSubscription:
-        "subscription StreamClientAsyncMessage($requestId: String!) { graphql_client_async_messages(where: { request_id: { _eq: $requestId } }, order_by: { updated_at: desc }, limit: 1) { request_id status response_payload error_payload completed_at updated_at } }",
+        "subscription StreamClientAsyncMessage($requestId: String!, $responseChannel: String!) { graphql_client_async_messages(where: { _and: [{ request_id: { _eq: $requestId } }, { kafka_topic: { _eq: $responseChannel } }] }, order_by: { updated_at: desc }, limit: 1) { request_id status response_payload error_payload completed_at updated_at } }",
       streamVariables: {
         requestId: "{{requestId}}",
         responseChannel: "{{responseChannel}}",

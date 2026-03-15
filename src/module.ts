@@ -80,9 +80,14 @@ mutation PublishAsyncRequest($input: json!) {
 `.trim();
 
 const defaultStreamSubscription = `
-subscription StreamClientAsyncMessage($requestId: String!) {
+subscription StreamClientAsyncMessage($requestId: String!, $responseChannel: String!) {
   graphql_client_async_messages(
-    where: { request_id: { _eq: $requestId } }
+    where: {
+      _and: [
+        { request_id: { _eq: $requestId } }
+        { kafka_topic: { _eq: $responseChannel } }
+      ]
+    }
     order_by: { updated_at: desc }
     limit: 1
   ) {
