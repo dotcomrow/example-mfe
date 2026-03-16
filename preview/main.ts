@@ -4,6 +4,7 @@ import { createCmsModuleDefinition } from "../src/host-adapter";
 
 type Cleanup = (() => void) | undefined;
 type AuthStatusState = "idle" | "ok" | "error";
+type ThemeMode = "auto" | "light" | "dark";
 
 type OidcDiscovery = {
   authorizationEndpoint: string;
@@ -26,6 +27,7 @@ type PkceSessionState = AuthFormState & {
 const AUTH_TOKEN_STORAGE_KEY = "mfe.preview.authToken";
 const AUTH_FORM_STORAGE_KEY = "mfe.preview.authFormState";
 const PKCE_SESSION_STORAGE_KEY = "mfe.preview.pkceSessionState";
+const THEME_STORAGE_KEY = "suncoast:cms:theme-mode";
 const PKCE_MAX_AGE_MS = 10 * 60 * 1000;
 const DEFAULT_PREVIEW_GRAPHQL_HTTP_URLS = {
   dev: "https://cf-suncoast-graphql-proxy.dev.suncoast.systems/graphql",
@@ -115,6 +117,7 @@ const conversationIdInput = getInput("conversationId");
 const applyButton = getButton("applyButton");
 const loginButton = getButton("loginButton");
 const clearTokenButton = getButton("clearTokenButton");
+const themeToggleButton = getButton("themeToggle");
 const authStatus = getAuthStatusElement();
 const host = getHost();
 
@@ -156,6 +159,61 @@ function getSavedToken(): string {
   } catch {
     return "";
   }
+}
+
+function getSavedTheme(): ThemeMode | null {
+  try {
+    const raw = localStorage.getItem(THEME_STORAGE_KEY)?.trim();
+    if (raw === "auto" || raw === "light" || raw === "dark") {
+      return raw;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveTheme(theme: ThemeMode): void {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // Ignore storage write errors in preview harness.
+  }
+}
+
+function inferSystemTheme(): ThemeMode {
+  try {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function resolveThemeForRender(theme: ThemeMode): "light" | "dark" {
+  if (theme === "auto") {
+    const system = inferSystemTheme();
+    return system === "dark" ? "dark" : "light";
+  }
+  return theme;
+}
+
+function applyTheme(theme: ThemeMode): void {
+  const resolvedTheme = resolveThemeForRender(theme);
+  document.documentElement.setAttribute("data-theme-mode", theme);
+  document.documentElement.setAttribute("data-theme-mode-resolved", resolvedTheme);
+  const label =
+    theme === "auto"
+      ? "Theme: Auto"
+      : theme === "light"
+      ? "Theme: Light"
+      : "Theme: Dark";
+  themeToggleButton.textContent = label;
+}
+
+function initializeTheme(): ThemeMode {
+  const initial = getSavedTheme() ?? "auto";
+  applyTheme(initial);
+  return initial;
 }
 
 function saveToken(value: string): void {
@@ -564,6 +622,30 @@ authTokenInput.addEventListener("change", () => {
 applyButton.addEventListener("click", () => {
   void mountFromForm();
 });
+
+let activeTheme: ThemeMode = initializeTheme();
+
+themeToggleButton.addEventListener("click", () => {
+  activeTheme = activeTheme === "auto" ? "light" : activeTheme === "light" ? "dark" : "auto";
+  saveTheme(activeTheme);
+  applyTheme(activeTheme);
+});
+
+try {
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  const handleSystemThemeChange = () => {
+    if (activeTheme === "auto") {
+      applyTheme("auto");
+    }
+  };
+  if (typeof media.addEventListener === "function") {
+    media.addEventListener("change", handleSystemThemeChange);
+  } else if (typeof media.addListener === "function") {
+    media.addListener(handleSystemThemeChange);
+  }
+} catch {
+  // Ignore unavailable matchMedia support in preview harness.
+}
 
 loginButton.addEventListener("click", () => {
   void startLoginRedirect();

@@ -8,11 +8,42 @@
       :root {
         color-scheme: light;
         font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        --bg: #f8fafc;
+        --text: #0f172a;
+        --panel-bg: #ffffff;
+        --panel-border: #cbd5e1;
+        --muted: #64748b;
+        --label: #475569;
+        --input-bg: #ffffff;
+        --input-border: #cbd5e1;
+        --button-bg: #1d4ed8;
+        --button-border: #1d4ed8;
+        --button-text: #ffffff;
+        --button-secondary-bg: #ffffff;
+        --button-secondary-border: #94a3b8;
+        --button-secondary-text: #0f172a;
+      }
+      :root[data-theme-mode-resolved="dark"] {
+        color-scheme: dark;
+        --bg: #0b1220;
+        --text: #e2e8f0;
+        --panel-bg: #111b2f;
+        --panel-border: #334155;
+        --muted: #94a3b8;
+        --label: #cbd5e1;
+        --input-bg: #0f172a;
+        --input-border: #334155;
+        --button-bg: #3b82f6;
+        --button-border: #3b82f6;
+        --button-text: #ffffff;
+        --button-secondary-bg: #0f172a;
+        --button-secondary-border: #475569;
+        --button-secondary-text: #e2e8f0;
       }
       body {
         margin: 0;
-        background: #f8fafc;
-        color: #0f172a;
+        background: var(--bg);
+        color: var(--text);
       }
       .wrap {
         max-width: 1120px;
@@ -25,9 +56,9 @@
         display: grid;
         gap: 0.65rem;
         padding: 0.9rem;
-        border: 1px solid #cbd5e1;
+        border: 1px solid var(--panel-border);
         border-radius: 10px;
-        background: #ffffff;
+        background: var(--panel-bg);
       }
       .row {
         display: grid;
@@ -35,7 +66,7 @@
       }
       .row > label {
         font-size: 0.8rem;
-        color: #475569;
+        color: var(--label);
       }
       input,
       textarea,
@@ -44,36 +75,43 @@
       }
       input,
       textarea {
-        border: 1px solid #cbd5e1;
+        border: 1px solid var(--input-border);
         border-radius: 8px;
         padding: 0.5rem 0.6rem;
-        background: #ffffff;
+        background: var(--input-bg);
+        color: var(--text);
       }
       textarea {
         min-height: 5rem;
+      }
+      .heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
       }
       .actions {
         display: flex;
         gap: 0.5rem;
       }
       button {
-        border: 1px solid #1d4ed8;
-        background: #1d4ed8;
-        color: #ffffff;
+        border: 1px solid var(--button-border);
+        background: var(--button-bg);
+        color: var(--button-text);
         border-radius: 8px;
         padding: 0.45rem 0.85rem;
         cursor: pointer;
       }
       button.secondary {
-        border-color: #94a3b8;
-        background: #ffffff;
-        color: #0f172a;
+        border-color: var(--button-secondary-border);
+        background: var(--button-secondary-bg);
+        color: var(--button-secondary-text);
       }
       .host {
         min-height: 220px;
       }
       .muted {
-        color: #64748b;
+        color: var(--muted);
         font-size: 0.82rem;
       }
       #authStatus[data-state="error"] {
@@ -87,7 +125,10 @@
   <body>
     <main class="wrap">
       <section class="panel">
-        <h1 style="margin:0; font-size: 1.1rem;">Example MFE Local Preview</h1>
+        <div class="heading">
+          <h1 style="margin:0; font-size: 1.1rem;">Example MFE Local Preview</h1>
+          <button id="themeToggle" class="secondary" type="button">Theme: Auto</button>
+        </div>
         <p class="muted" style="margin:0;">
           Edit GraphQL endpoints and remount the module. Query/mutation docs are configurable from Directus props in production.
         </p>
