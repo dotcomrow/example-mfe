@@ -115,6 +115,16 @@ type RuntimeGraphqlConfig = {
   authToken: string;
 };
 
+const THEME_COLOR = {
+  text: "var(--cms-ui-text, var(--cms-text, #0f172a))",
+  muted: "var(--cms-ui-muted, var(--cms-muted, #64748b))",
+  surface: "var(--cms-ui-surface, var(--cms-surface, #ffffff))",
+  elevated: "var(--cms-ui-elevated, #f8fafc)",
+  border: "var(--cms-ui-border, var(--cms-border, #cbd5e1))",
+  accent: "var(--cms-ui-accent, var(--cms-accent, #1d4ed8))",
+  onAccent: "var(--cms-on-accent, #ffffff)",
+} as const;
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -742,9 +752,15 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     item.style.display = "grid";
     item.style.gap = "0.25rem";
     item.style.padding = "0.45rem 0.55rem";
-    item.style.border = "1px solid #d2dbe8";
+    item.style.border = `1px solid ${THEME_COLOR.border}`;
     item.style.borderRadius = "8px";
-    item.style.background = role === "user" ? "#f3f8ff" : role === "assistant" ? "#ffffff" : "#f8fafc";
+    item.style.background =
+      role === "user"
+        ? THEME_COLOR.elevated
+        : role === "assistant"
+          ? THEME_COLOR.surface
+          : THEME_COLOR.elevated;
+    item.style.color = THEME_COLOR.text;
     const label = document.createElement("strong");
     label.textContent = role === "user" ? "You" : role === "assistant" ? props.assistantLabel : "System";
     const body = document.createElement("div");
@@ -767,9 +783,10 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     item.style.display = "grid";
     item.style.gap = "0.25rem";
     item.style.padding = "0.45rem 0.55rem";
-    item.style.border = "1px solid #d2dbe8";
+    item.style.border = `1px solid ${THEME_COLOR.border}`;
     item.style.borderRadius = "8px";
-    item.style.background = "#ffffff";
+    item.style.background = THEME_COLOR.surface;
+    item.style.color = THEME_COLOR.text;
     const label = document.createElement("strong");
     label.textContent = props.assistantLabel;
     const body = document.createElement("div");
@@ -1041,10 +1058,10 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     container.style.width = "100%";
     container.style.maxWidth = "44rem";
     container.style.padding = "0.875rem";
-    container.style.border = "1px solid #cbd5e1";
+    container.style.border = `1px solid ${THEME_COLOR.border}`;
     container.style.borderRadius = "10px";
-    container.style.background = "#ffffff";
-    container.style.color = "#0f172a";
+    container.style.background = THEME_COLOR.surface;
+    container.style.color = THEME_COLOR.text;
     container.style.boxSizing = "border-box";
 
     const header = document.createElement("header");
@@ -1059,7 +1076,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
 
     statusEl = document.createElement("div");
     statusEl.style.fontSize = "0.78rem";
-    statusEl.style.color = "#64748b";
+    statusEl.style.color = THEME_COLOR.muted;
     {
       const channelSummary = formatAsyncChannelSummary(props.async);
       setStatus(
@@ -1077,8 +1094,8 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     listEl.style.maxHeight = "14rem";
     listEl.style.overflow = "auto";
     listEl.style.padding = "0.2rem";
-    listEl.style.background = "#f8fafc";
-    listEl.style.border = "1px solid #e2e8f0";
+    listEl.style.background = THEME_COLOR.elevated;
+    listEl.style.border = `1px solid ${THEME_COLOR.border}`;
     listEl.style.borderRadius = "8px";
 
     formEl = document.createElement("form");
@@ -1091,8 +1108,10 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     inputEl.placeholder = props.inputPlaceholder;
     inputEl.autocomplete = "off";
     inputEl.style.minHeight = "2.25rem";
-    inputEl.style.border = "1px solid #cbd5e1";
+    inputEl.style.border = `1px solid ${THEME_COLOR.border}`;
     inputEl.style.borderRadius = "8px";
+    inputEl.style.background = THEME_COLOR.surface;
+    inputEl.style.color = THEME_COLOR.text;
     inputEl.style.padding = "0.4rem 0.6rem";
     inputEl.style.fontSize = "0.9rem";
 
@@ -1101,12 +1120,12 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     submitEl.textContent = props.submitLabel;
     submitEl.style.minWidth = "6rem";
     submitEl.style.minHeight = "2.25rem";
-    submitEl.style.border = "1px solid #1e3a8a";
+    submitEl.style.border = `1px solid ${THEME_COLOR.accent}`;
     submitEl.style.borderRadius = "8px";
     submitEl.style.padding = "0.4rem 0.75rem";
     submitEl.style.fontWeight = "600";
-    submitEl.style.background = "#1d4ed8";
-    submitEl.style.color = "#ffffff";
+    submitEl.style.background = THEME_COLOR.accent;
+    submitEl.style.color = THEME_COLOR.onAccent;
     submitEl.style.cursor = "pointer";
 
     formEl.append(inputEl, submitEl);
