@@ -22,25 +22,26 @@ export function readEnvironment(mode = "production") {
   }
 
   return {
-    MFE_PREVIEW_AUTH_ISSUER_URL:
+    MFE_PREVIEW_AUTH_GATEWAY_URL:
+      process.env.MFE_PREVIEW_AUTH_GATEWAY_URL ??
+      loaded.MFE_PREVIEW_AUTH_GATEWAY_URL ??
       process.env.MFE_PREVIEW_AUTH_ISSUER_URL ??
       loaded.MFE_PREVIEW_AUTH_ISSUER_URL ??
-      "https://auth.suncoast.systems",
-    MFE_PREVIEW_AUTH_CLIENT_ID:
-      process.env.MFE_PREVIEW_AUTH_CLIENT_ID ?? loaded.MFE_PREVIEW_AUTH_CLIENT_ID ?? "",
-    MFE_PREVIEW_AUTH_AUDIENCE:
-      process.env.MFE_PREVIEW_AUTH_AUDIENCE ?? loaded.MFE_PREVIEW_AUTH_AUDIENCE ?? "",
-    MFE_PREVIEW_AUTH_SCOPE:
-      process.env.MFE_PREVIEW_AUTH_SCOPE ?? loaded.MFE_PREVIEW_AUTH_SCOPE ?? "openid profile email",
+      "https://login.suncoast.systems",
+    MFE_PREVIEW_AUTH_APP_SLUG:
+      process.env.MFE_PREVIEW_AUTH_APP_SLUG ??
+      loaded.MFE_PREVIEW_AUTH_APP_SLUG ??
+      "example-mfe-preview",
+    MFE_PREVIEW_AUTH_CODE_PARAM:
+      process.env.MFE_PREVIEW_AUTH_CODE_PARAM ?? loaded.MFE_PREVIEW_AUTH_CODE_PARAM ?? "gateway_code",
     MFE_PREVIEW_PORT: process.env.MFE_PREVIEW_PORT ?? loaded.MFE_PREVIEW_PORT ?? "4173",
   };
 }
 
 export function asEsbuildDefines(env) {
   return {
-    __MFE_PREVIEW_AUTH_ISSUER_URL__: JSON.stringify(env.MFE_PREVIEW_AUTH_ISSUER_URL),
-    __MFE_PREVIEW_AUTH_CLIENT_ID__: JSON.stringify(env.MFE_PREVIEW_AUTH_CLIENT_ID),
-    __MFE_PREVIEW_AUTH_AUDIENCE__: JSON.stringify(env.MFE_PREVIEW_AUTH_AUDIENCE),
-    __MFE_PREVIEW_AUTH_SCOPE__: JSON.stringify(env.MFE_PREVIEW_AUTH_SCOPE),
+    __MFE_PREVIEW_AUTH_GATEWAY_URL__: JSON.stringify(env.MFE_PREVIEW_AUTH_GATEWAY_URL),
+    __MFE_PREVIEW_AUTH_APP_SLUG__: JSON.stringify(env.MFE_PREVIEW_AUTH_APP_SLUG),
+    __MFE_PREVIEW_AUTH_CODE_PARAM__: JSON.stringify(env.MFE_PREVIEW_AUTH_CODE_PARAM),
   };
 }

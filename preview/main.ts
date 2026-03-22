@@ -6,29 +6,15 @@ type Cleanup = (() => void) | undefined;
 type AuthStatusState = "idle" | "ok" | "error";
 type ThemeMode = "auto" | "light" | "dark";
 
-type OidcDiscovery = {
-  authorizationEndpoint: string;
-  tokenEndpoint: string;
-};
-
 type AuthFormState = {
-  issuerUrl: string;
-  clientId: string;
-  audience: string;
-  scope: string;
-};
-
-type PkceSessionState = AuthFormState & {
-  state: string;
-  codeVerifier: string;
-  createdAt: number;
+  gatewayUrl: string;
+  appSlug: string;
+  codeParam: string;
 };
 
 const AUTH_TOKEN_STORAGE_KEY = "mfe.preview.authToken";
 const AUTH_FORM_STORAGE_KEY = "mfe.preview.authFormState";
-const PKCE_SESSION_STORAGE_KEY = "mfe.preview.pkceSessionState";
 const THEME_STORAGE_KEY = "suncoast:cms:theme-mode";
-const PKCE_MAX_AGE_MS = 10 * 60 * 1000;
 const DEFAULT_PREVIEW_GRAPHQL_HTTP_URLS = {
   dev: "https://cf-suncoast-graphql-proxy.dev.suncoast.systems/graphql",
   prod: "https://cf-suncoast-graphql-proxy.prod.suncoast.systems/graphql",
@@ -109,10 +95,9 @@ function getAuthStatusElement(): HTMLElement {
 const httpUrlInput = getInput("httpUrl");
 const wsUrlInput = getInput("wsUrl");
 const authTokenInput = getInput("authToken");
-const authIssuerInput = getInput("authIssuer");
-const authClientIdInput = getInput("authClientId");
-const authAudienceInput = getInput("authAudience");
-const authScopeInput = getInput("authScope");
+const authGatewayInput = getInput("authGateway");
+const authAppSlugInput = getInput("authAppSlug");
+const authCodeParamInput = getInput("authCodeParam");
 const conversationIdInput = getInput("conversationId");
 const applyButton = getButton("applyButton");
 const loginButton = getButton("loginButton");
@@ -123,10 +108,9 @@ const host = getHost();
 
 httpUrlInput.value = inferDefaultGraphqlHttpUrl();
 wsUrlInput.value = toWebSocketUrl(httpUrlInput.value);
-authIssuerInput.value = buildEnvDefaults.previewAuthIssuerUrl || "https://auth.suncoast.systems";
-authClientIdInput.value = buildEnvDefaults.previewAuthClientId;
-authAudienceInput.value = buildEnvDefaults.previewAuthAudience;
-authScopeInput.value = buildEnvDefaults.previewAuthScope || "openid profile email";
+authGatewayInput.value = buildEnvDefaults.previewAuthGatewayUrl || "https://login.suncoast.systems";
+authAppSlugInput.value = buildEnvDefaults.previewAuthAppSlug || "example-mfe-preview";
+authCodeParamInput.value = buildEnvDefaults.previewAuthCodeParam || "gateway_code";
 conversationIdInput.value = "";
 
 let currentAbort: AbortController | null = null;
@@ -231,10 +215,9 @@ function saveToken(value: string): void {
 
 function saveAuthForm(): void {
   const state: AuthFormState = {
-    issuerUrl: authIssuerInput.value.trim(),
-    clientId: authClientIdInput.value.trim(),
-    audience: authAudienceInput.value.trim(),
-    scope: authScopeInput.value.trim(),
+    gatewayUrl: authGatewayInput.value.trim(),
+    appSlug: authAppSlugInput.value.trim(),
+    codeParam: authCodeParamInput.value.trim(),
   };
   try {
     localStorage.setItem(AUTH_FORM_STORAGE_KEY, JSON.stringify(state));
@@ -257,10 +240,9 @@ function loadSavedAuthForm(): void {
     return;
   }
 
-  if (state.issuerUrl) authIssuerInput.value = state.issuerUrl;
-  if (state.clientId) authClientIdInput.value = state.clientId;
-  if (state.audience) authAudienceInput.value = state.audience;
-  if (state.scope) authScopeInput.value = state.scope;
+  if (state.gatewayUrl) authGatewayInput.value = state.gatewayUrl;
+  if (state.appSlug) authAppSlugInput.value = state.appSlug;
+  if (state.codeParam) authCodeParamInput.value = state.codeParam;
 }
 
 function setAuthStatus(message: string, state: AuthStatusState = "idle"): void {
@@ -272,8 +254,20 @@ function setAuthStatus(message: string, state: AuthStatusState = "idle"): void {
   authStatus.setAttribute("data-state", state);
 }
 
-function clearAuthParamsFromUrl(clearHash = false): void {
+function normalizeCodeParam(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "gateway_code";
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+    throw new Error("Auth code param must be a valid query key");
+  }
+  return trimmed;
+}
+
+function clearAuthParamsFromUrl(codeParam: string, clearHash = false): void {
   const url = new URL(window.location.href);
+  url.searchParams.delete(codeParam);
   url.searchParams.delete("code");
   url.searchParams.delete("state");
   url.searchParams.delete("error");
@@ -286,76 +280,21 @@ function clearAuthParamsFromUrl(clearHash = false): void {
   window.history.replaceState({}, document.title, nextUrl);
 }
 
-function normalizeIssuerUrl(value: string): string {
+function normalizeGatewayUrl(value: string): string {
   const trimmed = value.trim().replace(/\/+$/g, "");
   if (!trimmed) {
-    return "";
+    throw new Error("Auth Gateway URL is required before logging in");
   }
 
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:") {
-      throw new Error("issuer must use https");
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      throw new Error("gateway must use https or http");
     }
     return parsed.toString().replace(/\/+$/g, "");
   } catch {
-    throw new Error("Auth Issuer URL must be a valid https URL");
+    throw new Error("Auth Gateway URL must be a valid URL");
   }
-}
-
-function bytesToBase64Url(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function randomBase64Url(byteCount = 32): string {
-  const bytes = new Uint8Array(byteCount);
-  crypto.getRandomValues(bytes);
-  return bytesToBase64Url(bytes);
-}
-
-async function sha256Base64Url(value: string): Promise<string> {
-  const data = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return bytesToBase64Url(new Uint8Array(digest));
-}
-
-async function fetchOidcDiscovery(issuerUrl: string): Promise<OidcDiscovery> {
-  const discoveryUrl = `${issuerUrl}/.well-known/openid-configuration`;
-  const response = await fetch(discoveryUrl, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Unable to load OIDC metadata (${response.status})`);
-  }
-
-  const payload = (await response.json()) as Record<string, unknown>;
-  const authorizationEndpoint =
-    typeof payload.authorization_endpoint === "string"
-      ? payload.authorization_endpoint.trim()
-      : "";
-  const tokenEndpoint =
-    typeof payload.token_endpoint === "string"
-      ? payload.token_endpoint.trim()
-      : "";
-
-  if (!authorizationEndpoint || !tokenEndpoint) {
-    throw new Error("OIDC metadata missing authorization_endpoint or token_endpoint");
-  }
-
-  return {
-    authorizationEndpoint,
-    tokenEndpoint,
-  };
 }
 
 function getRedirectUri(): string {
@@ -364,54 +303,58 @@ function getRedirectUri(): string {
 
 async function startLoginRedirect(): Promise<void> {
   try {
-    const issuerUrl = normalizeIssuerUrl(authIssuerInput.value);
-    const clientId = authClientIdInput.value.trim();
-    const audience = authAudienceInput.value.trim();
-    const scope = authScopeInput.value.trim() || "openid profile email";
-
-    if (!clientId) {
-      throw new Error("Auth Client ID is required before logging in");
+    const gatewayUrl = normalizeGatewayUrl(authGatewayInput.value);
+    const appSlug = authAppSlugInput.value.trim();
+    if (!appSlug) {
+      throw new Error("Auth App Slug is required before logging in");
     }
 
     saveAuthForm();
-    setAuthStatus("Loading auth metadata...");
-    const discovery = await fetchOidcDiscovery(issuerUrl);
+    setAuthStatus("Redirecting to auth gateway...");
 
-    const state = randomBase64Url(24);
-    const codeVerifier = randomBase64Url(48);
-    const codeChallenge = await sha256Base64Url(codeVerifier);
-    const redirectUri = getRedirectUri();
-
-    const sessionState: PkceSessionState = {
-      issuerUrl,
-      clientId,
-      audience,
-      scope,
-      state,
-      codeVerifier,
-      createdAt: Date.now(),
-    };
-    sessionStorage.setItem(PKCE_SESSION_STORAGE_KEY, JSON.stringify(sessionState));
-
-    const authorizeUrl = new URL(discovery.authorizationEndpoint);
-    authorizeUrl.searchParams.set("response_type", "code");
-    authorizeUrl.searchParams.set("client_id", clientId);
-    authorizeUrl.searchParams.set("redirect_uri", redirectUri);
-    authorizeUrl.searchParams.set("scope", scope);
-    authorizeUrl.searchParams.set("state", state);
-    authorizeUrl.searchParams.set("code_challenge_method", "S256");
-    authorizeUrl.searchParams.set("code_challenge", codeChallenge);
-    if (audience) {
-      authorizeUrl.searchParams.set("audience", audience);
-    }
-
-    window.location.assign(authorizeUrl.toString());
+    const startUrl = new URL(`${gatewayUrl}/start`);
+    startUrl.searchParams.set("app", appSlug);
+    startUrl.searchParams.set("return_to", getRedirectUri());
+    window.location.assign(startUrl.toString());
   } catch (error) {
     setAuthStatus(`Login setup failed: ${toErrorMessage(error)}`, "error");
   }
 }
 
+async function exchangeGatewayCode(
+  gatewayUrl: string,
+  appSlug: string,
+  gatewayCode: string,
+): Promise<string> {
+  const response = await fetch(`${gatewayUrl}/v1/auth/exchange`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      code: gatewayCode,
+      app_slug: appSlug,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.text()).slice(0, 250);
+    throw new Error(`Gateway exchange failed (${response.status}) ${body}`);
+  }
+
+  const payload = (await response.json()) as Record<string, unknown>;
+  const accessToken =
+    typeof payload.access_token === "string" ? payload.access_token.trim() : "";
+
+  if (!accessToken) {
+    throw new Error("Gateway response missing access_token");
+  }
+  return accessToken;
+}
+
 async function tryHandleAuthRedirect(): Promise<void> {
+  const codeParam = normalizeCodeParam(authCodeParamInput.value);
   const hash = window.location.hash.startsWith("#")
     ? window.location.hash.slice(1)
     : "";
@@ -422,14 +365,13 @@ async function tryHandleAuthRedirect(): Promise<void> {
       authTokenInput.value = implicitToken;
       saveToken(implicitToken);
       setAuthStatus("Login complete. Access token loaded.", "ok");
-      clearAuthParamsFromUrl(true);
+      clearAuthParamsFromUrl(codeParam, true);
       return;
     }
   }
 
   const callbackUrl = new URL(window.location.href);
-  const code = callbackUrl.searchParams.get("code")?.trim() || "";
-  const returnedState = callbackUrl.searchParams.get("state")?.trim() || "";
+  const gatewayCode = callbackUrl.searchParams.get(codeParam)?.trim() || "";
   const authError = callbackUrl.searchParams.get("error")?.trim() || "";
   const authErrorDescription =
     callbackUrl.searchParams.get("error_description")?.trim() || "";
@@ -439,82 +381,31 @@ async function tryHandleAuthRedirect(): Promise<void> {
       authErrorDescription || `Login failed: ${authError}`,
       "error",
     );
-    clearAuthParamsFromUrl(true);
+    clearAuthParamsFromUrl(codeParam, true);
     return;
   }
 
-  if (!code) {
-    return;
-  }
-
-  const sessionState = parseJsonObject<PkceSessionState>(
-    sessionStorage.getItem(PKCE_SESSION_STORAGE_KEY),
-  );
-
-  if (!sessionState) {
-    setAuthStatus("Missing login session state. Retry login.", "error");
-    clearAuthParamsFromUrl(true);
-    return;
-  }
-
-  if (Date.now() - sessionState.createdAt > PKCE_MAX_AGE_MS) {
-    sessionStorage.removeItem(PKCE_SESSION_STORAGE_KEY);
-    setAuthStatus("Login session expired. Retry login.", "error");
-    clearAuthParamsFromUrl(true);
-    return;
-  }
-
-  if (!returnedState || returnedState !== sessionState.state) {
-    sessionStorage.removeItem(PKCE_SESSION_STORAGE_KEY);
-    setAuthStatus("State validation failed. Retry login.", "error");
-    clearAuthParamsFromUrl(true);
+  if (!gatewayCode) {
     return;
   }
 
   try {
-    setAuthStatus("Exchanging auth code for access token...");
-    const discovery = await fetchOidcDiscovery(sessionState.issuerUrl);
-    const tokenBody = new URLSearchParams();
-    tokenBody.set("grant_type", "authorization_code");
-    tokenBody.set("code", code);
-    tokenBody.set("client_id", sessionState.clientId);
-    tokenBody.set("redirect_uri", getRedirectUri());
-    tokenBody.set("code_verifier", sessionState.codeVerifier);
-
-    const tokenResponse = await fetch(discovery.tokenEndpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: tokenBody.toString(),
-    });
-
-    if (!tokenResponse.ok) {
-      const tokenErrorBody = (await tokenResponse.text()).slice(0, 200);
-      throw new Error(
-        `Token exchange failed (${tokenResponse.status}) ${tokenErrorBody}`,
-      );
+    const gatewayUrl = normalizeGatewayUrl(authGatewayInput.value);
+    const appSlug = authAppSlugInput.value.trim();
+    if (!appSlug) {
+      throw new Error("Auth App Slug is required for login callback");
     }
 
-    const tokenPayload = (await tokenResponse.json()) as Record<string, unknown>;
-    const accessToken =
-      typeof tokenPayload.access_token === "string"
-        ? tokenPayload.access_token.trim()
-        : "";
-
-    if (!accessToken) {
-      throw new Error("Token response missing access_token");
-    }
+    setAuthStatus("Exchanging login code for access token...");
+    const accessToken = await exchangeGatewayCode(gatewayUrl, appSlug, gatewayCode);
 
     authTokenInput.value = accessToken;
     saveToken(accessToken);
-    sessionStorage.removeItem(PKCE_SESSION_STORAGE_KEY);
     setAuthStatus("Login complete. Access token loaded.", "ok");
   } catch (error) {
     setAuthStatus(`Login callback failed: ${toErrorMessage(error)}`, "error");
   } finally {
-    clearAuthParamsFromUrl(true);
+    clearAuthParamsFromUrl(codeParam, true);
   }
 }
 
@@ -605,10 +496,9 @@ async function mountFromForm() {
 }
 
 for (const input of [
-  authIssuerInput,
-  authClientIdInput,
-  authAudienceInput,
-  authScopeInput,
+  authGatewayInput,
+  authAppSlugInput,
+  authCodeParamInput,
 ]) {
   input.addEventListener("change", () => {
     saveAuthForm();

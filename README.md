@@ -51,20 +51,20 @@ Local preview:
 
 Supported env vars:
 
-- `MFE_PREVIEW_AUTH_ISSUER_URL` (preview login default, usually `https://auth.suncoast.systems`)
-- `MFE_PREVIEW_AUTH_CLIENT_ID` (preview login client id)
-- `MFE_PREVIEW_AUTH_AUDIENCE` (preview login audience, optional)
-- `MFE_PREVIEW_AUTH_SCOPE` (preview login scope, default `openid profile email`)
+- `MFE_PREVIEW_AUTH_GATEWAY_URL` (preview login gateway, usually `https://login.suncoast.systems`)
+- `MFE_PREVIEW_AUTH_APP_SLUG` (registered app slug in auth-gateway, for example `example-mfe-preview`)
+- `MFE_PREVIEW_AUTH_CODE_PARAM` (query key returned by gateway callback, default `gateway_code`)
 - `MFE_PREVIEW_PORT` (dev only)
 
 ## Local Preview Login
 
-The local preview page (`/preview/`) now includes a login helper that runs OAuth/OIDC code+PKCE in-browser:
+The local preview page (`/preview/`) now includes a login helper that uses the shared auth-gateway flow:
 
-1. Fill `Auth Issuer URL` and `Auth Client ID` (or set `MFE_PREVIEW_AUTH_*` env vars).
+1. Fill `Auth Gateway URL` and `Auth App Slug` (or set `MFE_PREVIEW_AUTH_*` env vars).
 2. Click `Login` on the preview page.
-3. After redirect back to `/preview/`, the access token is auto-filled into `Auth Token`.
-4. Click `Apply / Remount` to use that token for GraphQL HTTP/WS requests.
+3. Gateway returns to `/preview/` with a one-time code (`gateway_code` by default).
+4. Preview exchanges that code at `/v1/auth/exchange` and auto-fills `Auth Token`.
+5. Click `Apply / Remount` to use that token for GraphQL HTTP/WS requests.
 
 If your auth provider returns `access_token` in URL hash (implicit flow), the preview page will capture that too.
 

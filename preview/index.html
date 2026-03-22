@@ -145,20 +145,16 @@
           <input id="authToken" />
         </div>
         <div class="row">
-          <label for="authIssuer">Auth Issuer URL</label>
-          <input id="authIssuer" value="https://auth.suncoast.systems" />
+          <label for="authGateway">Auth Gateway URL</label>
+          <input id="authGateway" value="https://login.suncoast.systems" />
         </div>
         <div class="row">
-          <label for="authClientId">Auth Client ID</label>
-          <input id="authClientId" />
+          <label for="authAppSlug">Auth App Slug</label>
+          <input id="authAppSlug" value="example-mfe-preview" />
         </div>
         <div class="row">
-          <label for="authAudience">Auth Audience (optional)</label>
-          <input id="authAudience" />
-        </div>
-        <div class="row">
-          <label for="authScope">Auth Scope</label>
-          <input id="authScope" value="openid profile email" />
+          <label for="authCodeParam">Auth Code Query Param</label>
+          <input id="authCodeParam" value="gateway_code" />
         </div>
         <div class="row">
           <label for="conversationId">Conversation Id (optional)</label>
