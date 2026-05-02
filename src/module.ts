@@ -14,6 +14,7 @@ type GraphqlConfig = {
   httpUrl: string;
   wsUrl: string;
   authToken: string;
+  tokenExchange: GraphqlTokenExchangeConfig;
   submitMutation: string;
   submitVariables: JsonValue;
   submitRequestIdPath: string;
@@ -24,6 +25,14 @@ type GraphqlConfig = {
   streamErrorPath: string;
   streamChunkMode: "append" | "replace";
   conversationId: string;
+};
+
+type GraphqlTokenExchangeConfig = {
+  enabled: boolean;
+  requestedAudience: string;
+  requestedScope: string;
+  tokenUrl: string;
+  clientId: string;
 };
 
 type ChatProps = {
@@ -109,10 +118,29 @@ const RUNTIME_TOKEN_STORAGE_KEYS = [
   "access_token",
 ] as const;
 
+const TOKEN_EXCHANGE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange";
+const ACCESS_TOKEN_TYPE_URN = "urn:ietf:params:oauth:token-type:access_token";
+const TOKEN_EXCHANGE_EXPIRY_LEEWAY_MS = 30_000;
+
 type RuntimeGraphqlConfig = {
   httpUrl: string;
   wsUrl: string;
   authToken: string;
+};
+
+type RuntimeTokenExchangeDefaults = {
+  tokenUrl: string;
+  clientId: string;
+};
+
+type TokenExchangeCacheEntry = {
+  sourceToken: string;
+  tokenUrl: string;
+  clientId: string;
+  requestedAudience: string;
+  requestedScope: string;
+  exchangedToken: string;
+  expiresAt: number | null;
 };
 
 const THEME_COLOR = {
@@ -150,6 +178,90 @@ function firstNonEmpty(...values: string[]): string {
     }
   }
   return "";
+}
+
+function decodeBase64UrlToString(value: string): string {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const paddingLength = (4 - (normalized.length % 4)) % 4;
+  const padded = `${normalized}${"=".repeat(paddingLength)}`;
+  try {
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (entry) => entry.charCodeAt(0));
+    if (typeof TextDecoder !== "undefined") {
+      return new TextDecoder().decode(bytes);
+    }
+    let fallback = "";
+    bytes.forEach((byte) => {
+      fallback += String.fromCharCode(byte);
+    });
+    return fallback;
+  } catch {
+    return "";
+  }
+}
+
+function parseJwtPayload(token: string): Record<string, unknown> {
+  const normalized = token.trim();
+  if (!normalized) {
+    return {};
+  }
+  const parts = normalized.split(".");
+  if (parts.length < 2) {
+    return {};
+  }
+  const decoded = decodeBase64UrlToString(parts[1] || "");
+  if (!decoded) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(decoded) as unknown;
+    return asRecord(parsed);
+  } catch {
+    return {};
+  }
+}
+
+function parseJwtExpiryMs(token: string): number | null {
+  const payload = parseJwtPayload(token);
+  const exp = payload.exp;
+  if (typeof exp === "number" && Number.isFinite(exp) && exp > 0) {
+    return exp * 1000;
+  }
+  if (typeof exp === "string") {
+    const parsed = Number.parseInt(exp, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed * 1000;
+    }
+  }
+  return null;
+}
+
+function tokenHasAudience(token: string, audience: string): boolean {
+  const requestedAudience = audience.trim();
+  if (!requestedAudience) {
+    return false;
+  }
+  const payload = parseJwtPayload(token);
+  const aud = payload.aud;
+  if (typeof aud === "string") {
+    return aud.trim() === requestedAudience;
+  }
+  if (Array.isArray(aud)) {
+    return aud.some((entry) => asString(entry).trim() === requestedAudience);
+  }
+  return false;
+}
+
+function deriveTokenEndpointFromTokenIssuer(token: string): string {
+  const payload = parseJwtPayload(token);
+  const issuer = asString(payload.iss).trim().replace(/\/+$/g, "");
+  if (!issuer) {
+    return "";
+  }
+  if (issuer.endsWith("/protocol/openid-connect")) {
+    return `${issuer}/token`;
+  }
+  return `${issuer}/protocol/openid-connect/token`;
 }
 
 function readTokenFromStorage(): string {
@@ -219,6 +331,24 @@ function readGraphqlFromWindow(): RuntimeGraphqlConfig {
         authTokenFromGetter,
         asString(globalAuth.accessToken),
       ) || readTokenFromStorage(),
+  };
+}
+
+function readTokenExchangeDefaults(): RuntimeTokenExchangeDefaults {
+  if (typeof window === "undefined") {
+    return { tokenUrl: "", clientId: "" };
+  }
+
+  const root = document.getElementById("cms-root");
+  const tokenUrlFromDom = asString(root?.dataset.authTokenUrl).trim();
+  const clientIdFromDom = asString(root?.dataset.authClientId).trim();
+
+  const globalAuth = asRecord((window as Window & { __SUNCOAST_AUTH__?: unknown }).__SUNCOAST_AUTH__);
+  const authConfig = asRecord(globalAuth.config);
+
+  return {
+    tokenUrl: firstNonEmpty(asString(authConfig.tokenUrl), tokenUrlFromDom),
+    clientId: firstNonEmpty(asString(authConfig.clientId), clientIdFromDom),
   };
 }
 
@@ -569,6 +699,28 @@ function emitEvent(ctx: ModuleContext, type: string, payload: JsonObject) {
   ctx.emit(event);
 }
 
+function normalizeTokenExchangeConfig(value: unknown): GraphqlTokenExchangeConfig {
+  const record = asRecord(value);
+  const hasConfig = Object.keys(record).length > 0;
+
+  const requestedAudience = asString(
+    record.requestedAudience || record.requested_audience,
+  ).trim();
+  const requestedScope = asString(record.requestedScope || record.requested_scope).trim();
+  const enabled =
+    hasConfig
+      ? asBoolean(record.enabled, Boolean(requestedAudience || requestedScope))
+      : false;
+
+  return {
+    enabled,
+    requestedAudience,
+    requestedScope,
+    tokenUrl: asString(record.tokenUrl || record.token_url).trim(),
+    clientId: asString(record.clientId || record.client_id).trim(),
+  };
+}
+
 function normalizeGraphqlConfig(rawProps: Record<string, unknown>, asyncConfig: ModuleAsyncConfig): GraphqlConfig {
   const graphql = asRecord(rawProps.graphql);
   const chunkModeRaw = asString(graphql.streamChunkMode || graphql.stream_chunk_mode || "append")
@@ -584,6 +736,9 @@ function normalizeGraphqlConfig(rawProps: Record<string, unknown>, asyncConfig: 
     httpUrl: asString(graphql.httpUrl || graphql.http_url).trim(),
     wsUrl: asString(graphql.wsUrl || graphql.ws_url).trim(),
     authToken: asString(graphql.authToken || graphql.auth_token).trim(),
+    tokenExchange: normalizeTokenExchangeConfig(
+      graphql.tokenExchange || graphql.token_exchange,
+    ),
     submitMutation: asString(graphql.submitMutation, defaultSubmitMutation).trim() || defaultSubmitMutation,
     submitVariables: parseTemplateValue(
       graphql.submitVariables ?? {
@@ -699,6 +854,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
   let listEl: HTMLDivElement | null = null;
   let statusEl: HTMLDivElement | null = null;
   let activeDispose: (() => void) | null = null;
+  let tokenExchangeCache: TokenExchangeCacheEntry | null = null;
 
   const resolveRuntimeGraphql = (): RuntimeGraphqlConfig => {
     const runtimeFromContext = asRecord(ctx.environment?.graphql);
@@ -728,12 +884,125 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
 
   const resolveEffectiveGraphqlConfig = (): GraphqlConfig => {
     const runtime = resolveRuntimeGraphql();
+    const tokenExchangeDefaults = readTokenExchangeDefaults();
+    const tokenExchange = props.graphql.tokenExchange;
     return {
       ...props.graphql,
       httpUrl: runtime.httpUrl,
       wsUrl: runtime.wsUrl,
       authToken: runtime.authToken,
+      tokenExchange: {
+        ...tokenExchange,
+        tokenUrl: firstNonEmpty(tokenExchange.tokenUrl, tokenExchangeDefaults.tokenUrl),
+        clientId: firstNonEmpty(tokenExchange.clientId, tokenExchangeDefaults.clientId),
+      },
     };
+  };
+
+  const resolveGraphqlForRequest = async (graphql: GraphqlConfig): Promise<GraphqlConfig> => {
+    const sourceToken = asString(graphql.authToken).trim();
+    const tokenExchange = graphql.tokenExchange;
+    if (!sourceToken || !tokenExchange.enabled) {
+      return graphql;
+    }
+
+    const requestedAudience = asString(tokenExchange.requestedAudience).trim();
+    const requestedScope = asString(tokenExchange.requestedScope).trim();
+    if (!requestedAudience && !requestedScope) {
+      return graphql;
+    }
+
+    if (requestedAudience && tokenHasAudience(sourceToken, requestedAudience)) {
+      return graphql;
+    }
+
+    const tokenUrl = firstNonEmpty(
+      asString(tokenExchange.tokenUrl).trim(),
+      deriveTokenEndpointFromTokenIssuer(sourceToken),
+    );
+    const clientId = asString(tokenExchange.clientId).trim();
+
+    if (!tokenUrl) {
+      throw new Error(
+        "Token exchange is enabled but no token endpoint is configured. Set graphql.tokenExchange.tokenUrl.",
+      );
+    }
+    if (!clientId) {
+      throw new Error(
+        "Token exchange is enabled but no client id is configured. Set graphql.tokenExchange.clientId.",
+      );
+    }
+
+    const cache = tokenExchangeCache;
+    if (
+      cache &&
+      cache.sourceToken === sourceToken &&
+      cache.tokenUrl === tokenUrl &&
+      cache.clientId === clientId &&
+      cache.requestedAudience === requestedAudience &&
+      cache.requestedScope === requestedScope &&
+      cache.exchangedToken &&
+      (!cache.expiresAt || Date.now() + TOKEN_EXCHANGE_EXPIRY_LEEWAY_MS < cache.expiresAt)
+    ) {
+      return { ...graphql, authToken: cache.exchangedToken };
+    }
+
+    const body = new URLSearchParams();
+    body.set("grant_type", TOKEN_EXCHANGE_GRANT_TYPE);
+    body.set("client_id", clientId);
+    body.set("subject_token", sourceToken);
+    body.set("subject_token_type", ACCESS_TOKEN_TYPE_URN);
+    body.set("requested_token_type", ACCESS_TOKEN_TYPE_URN);
+    if (requestedAudience) {
+      body.set("audience", requestedAudience);
+    }
+    if (requestedScope) {
+      body.set("scope", requestedScope);
+    }
+
+    setStatus("Exchanging auth token for GraphQL audience...");
+    const response = await fetch(tokenUrl, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+      signal: ctx.signal,
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      const details = (await response.text()).trim().slice(0, 240);
+      throw new Error(
+        `Token exchange failed (${response.status})${details ? `: ${details}` : ""}`,
+      );
+    }
+
+    const payload = (await response.json()) as Record<string, unknown>;
+    const exchangedToken = asString(payload.access_token).trim();
+    if (!exchangedToken) {
+      throw new Error("Token exchange response did not include access_token.");
+    }
+
+    let expiresAt: number | null = null;
+    const expiresIn = payload.expires_in;
+    if (typeof expiresIn === "number" && Number.isFinite(expiresIn) && expiresIn > 0) {
+      expiresAt = Date.now() + Math.floor(expiresIn * 1000);
+    } else {
+      expiresAt = parseJwtExpiryMs(exchangedToken);
+    }
+
+    tokenExchangeCache = {
+      sourceToken,
+      tokenUrl,
+      clientId,
+      requestedAudience,
+      requestedScope,
+      exchangedToken,
+      expiresAt,
+    };
+
+    return { ...graphql, authToken: exchangedToken };
   };
 
   const clearActiveSubscription = () => {
@@ -961,17 +1230,17 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       requestChannel: props.async.requestChannel || "",
       responseChannel: props.async.responseChannel || "",
     });
-    const graphql = resolveEffectiveGraphqlConfig();
+    const runtimeGraphql = resolveEffectiveGraphqlConfig();
 
     if (!props.async.enabled || props.async.mode === "none") {
       appendLine("system", "Async disabled. Enable props.async for GraphQL stream mode.");
       return;
     }
-    if (!graphql.httpUrl) {
+    if (!runtimeGraphql.httpUrl) {
       appendLine("system", "Missing graphql.httpUrl in module props.");
       return;
     }
-    if (!graphql.wsUrl) {
+    if (!runtimeGraphql.wsUrl) {
       appendLine("system", "Missing graphql.wsUrl in module props.");
       return;
     }
@@ -980,6 +1249,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     try {
       setPending(true);
       setStatus("Submitting prompt...");
+      const graphql = await resolveGraphqlForRequest(runtimeGraphql);
 
       const submitVariables = applyTemplate(graphql.submitVariables, {
         prompt: text,

@@ -326,16 +326,19 @@ async function exchangeGatewayCode(
   appSlug: string,
   gatewayCode: string,
 ): Promise<string> {
+  const requestBody = {
+    code: gatewayCode,
+    app_slug: appSlug,
+    request_hasura_claims: true,
+  };
+
   const response = await fetch(`${gatewayUrl}/v1/auth/exchange`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({
-      code: gatewayCode,
-      app_slug: appSlug,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -396,7 +399,7 @@ async function tryHandleAuthRedirect(): Promise<void> {
       throw new Error("Auth App Slug is required for login callback");
     }
 
-    setAuthStatus("Exchanging login code for access token...");
+    setAuthStatus("Exchanging login code for access token (requesting Hasura claims)...");
     const accessToken = await exchangeGatewayCode(gatewayUrl, appSlug, gatewayCode);
 
     authTokenInput.value = accessToken;

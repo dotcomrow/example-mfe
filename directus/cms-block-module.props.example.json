@@ -9,6 +9,13 @@
     "httpUrl": "",
     "wsUrl": "",
     "authToken": "",
+    "tokenExchange": {
+      "enabled": false,
+      "requestedAudience": "",
+      "requestedScope": "",
+      "tokenUrl": "",
+      "clientId": ""
+    },
     "submitMutation": "mutation PublishAsyncRequest($input: json!) { publish_async_request(input: $input) }",
     "submitVariables": {
       "input": {

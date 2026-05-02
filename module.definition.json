@@ -82,6 +82,40 @@
               "title": "Auth Token",
               "description": "Optional bearer token override for GraphQL HTTP and WS calls. Leave empty to inherit shell auth."
             },
+            "tokenExchange": {
+              "type": "object",
+              "title": "Token Exchange",
+              "description": "Optional OAuth token exchange for converting the shell access token to the audience needed by this MFE.",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "title": "Enabled",
+                  "description": "When true, exchange the current bearer token before GraphQL submit/stream calls."
+                },
+                "requestedAudience": {
+                  "type": "string",
+                  "title": "Requested Audience",
+                  "description": "Target audience for exchanged token (for example Hasura audience/client id)."
+                },
+                "requestedScope": {
+                  "type": "string",
+                  "title": "Requested Scope",
+                  "description": "Optional scope requested during token exchange."
+                },
+                "tokenUrl": {
+                  "type": "string",
+                  "title": "Token Endpoint URL",
+                  "description": "OIDC token endpoint used for token exchange. Leave empty to use shell auth runtime defaults.",
+                  "format": "uri"
+                },
+                "clientId": {
+                  "type": "string",
+                  "title": "Client Id",
+                  "description": "OIDC client id used for token exchange. Leave empty to use shell auth runtime defaults."
+                }
+              }
+            },
             "submitMutation": {
               "type": "string",
               "title": "Submit Mutation",

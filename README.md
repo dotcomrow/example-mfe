@@ -43,6 +43,11 @@ Resolution order:
 2. Shell runtime values (`#cms-root` data attrs / `window.__SUNCOAST_RUNTIME__.graphql`)
 3. Browser auth storage fallback for token (for preview helper flows)
 
+Optional token exchange:
+
+- Configure `graphql.tokenExchange` to exchange the shell bearer token to the audience this MFE needs before GraphQL submit/stream calls.
+- If `tokenExchange.tokenUrl` / `tokenExchange.clientId` are omitted, the module falls back to shell auth runtime values (`data-auth-token-url`, `data-auth-client-id`, `window.__SUNCOAST_AUTH__.config`).
+
 Local preview:
 
 1. Copy `.env.local.example` to `.env.local`
@@ -64,6 +69,7 @@ The local preview page (`/preview/`) now includes a login helper that uses the s
 2. Click `Login` on the preview page.
 3. Gateway returns to `/preview/` with a one-time code (`gateway_code` by default).
 4. Preview exchanges that code at `/v1/auth/exchange` and auto-fills `Auth Token`.
+   - Preview requests Hasura claims (`request_hasura_claims: true`), and gateway resolves audience server-side.
 5. Click `Apply / Remount` to use that token for GraphQL HTTP/WS requests.
 
 If your auth provider returns `access_token` in URL hash (implicit flow), the preview page will capture that too.
@@ -85,6 +91,12 @@ If your auth provider returns `access_token` in URL hash (implicit flow), the pr
 5. Set:
    - optional `graphql.httpUrl` and `graphql.wsUrl` overrides (leave unset to use shell runtime defaults)
    - optional `graphql.authToken` override (usually leave unset and let shell runtime auth provide token)
+   - optional `graphql.tokenExchange.*`:
+     - `enabled`
+     - `requestedAudience` (set this to the Hasura/GraphQL audience expected by auth hook)
+     - `requestedScope` (optional)
+     - `tokenUrl` (optional; defaults from shell auth runtime)
+     - `clientId` (optional; defaults from shell auth runtime)
    - `graphql.submitMutation` and `graphql.streamSubscription` (defaults are preconfigured for `publish_async_request` + `graphql_client_async_messages`)
    - optional async transport hints:
      - `async.mode` (`none`, `graphql-stream`, `kafka-graphql-bridge`, `request-response`, `subscribe`, `mixed`)
