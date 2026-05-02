@@ -289,12 +289,40 @@ function normalizeAudienceValues(singleAudience: string, audiences: string[]): s
 }
 
 function parseStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
+  const normalize = (entries: unknown[]): string[] => {
+    return entries
+      .map((entry) => asString(entry).trim())
+      .filter(Boolean);
+  };
+
+  if (Array.isArray(value)) {
+    return normalize(value);
   }
-  return value
-    .map((entry) => asString(entry).trim())
-    .filter(Boolean);
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (Array.isArray(parsed)) {
+          return normalize(parsed);
+        }
+      } catch {
+        // Fall through to comma/newline split.
+      }
+    }
+
+    return trimmed
+      .split(/[\n,]/g)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 function deriveTokenEndpointFromTokenIssuer(token: string): string {
@@ -991,11 +1019,15 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       return graphql;
     }
 
-    if (requestedAudiences.length > 0 && tokenHasAllAudiences(sourceToken, requestedAudiences)) {
+    const exchangeUrl = asString(tokenExchange.exchangeUrl).trim();
+    if (
+      !exchangeUrl &&
+      requestedAudiences.length > 0 &&
+      tokenHasAllAudiences(sourceToken, requestedAudiences)
+    ) {
       return graphql;
     }
 
-    const exchangeUrl = asString(tokenExchange.exchangeUrl).trim();
     const tokenUrl = firstNonEmpty(
       asString(tokenExchange.tokenUrl).trim(),
       deriveTokenEndpointFromTokenIssuer(sourceToken),

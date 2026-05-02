@@ -47,6 +47,7 @@ Optional token exchange:
 
 - Configure `graphql.tokenExchange` to exchange the shell bearer token to the audience this MFE needs before GraphQL submit/stream calls.
 - Preferred: set `graphql.tokenExchange.exchangeUrl` to your backend exchange endpoint (for example `https://login.suncoast.systems/v1/auth/token-exchange`) so the browser never calls Keycloak token exchange directly.
+- When `exchangeUrl` is set, the MFE performs gateway exchange even if the source token already contains the requested audience (so gateway can still mint/augment required claims).
 - If `tokenExchange.tokenUrl` / `tokenExchange.clientId` are omitted, the module falls back to shell auth runtime values (`data-auth-token-url`, `data-auth-client-id`, `window.__SUNCOAST_AUTH__.config`).
 
 Local preview:
