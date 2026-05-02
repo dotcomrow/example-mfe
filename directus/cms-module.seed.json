@@ -84,10 +84,29 @@
                 "title": "Requested Audience",
                 "description": "Target audience for exchanged token (for example Hasura audience/client id)."
               },
+              "requestedAudiences": {
+                "type": "array",
+                "title": "Requested Audiences",
+                "description": "Optional list of target audiences. Use when a single exchanged token must include multiple aud values.",
+                "items": {
+                  "type": "string"
+                }
+              },
               "requestedScope": {
                 "type": "string",
                 "title": "Requested Scope",
                 "description": "Optional scope requested during token exchange."
+              },
+              "exchangeUrl": {
+                "type": "string",
+                "title": "Gateway Exchange URL",
+                "description": "Dedicated backend token exchange endpoint (for example auth-gateway /v1/auth/token-exchange). When set, token exchange is performed through this backend.",
+                "format": "uri"
+              },
+              "appSlug": {
+                "type": "string",
+                "title": "Gateway App Slug",
+                "description": "Registered auth-gateway app slug used by the backend token exchange endpoint."
               },
               "tokenUrl": {
                 "type": "string",

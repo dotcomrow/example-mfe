@@ -46,6 +46,7 @@ Resolution order:
 Optional token exchange:
 
 - Configure `graphql.tokenExchange` to exchange the shell bearer token to the audience this MFE needs before GraphQL submit/stream calls.
+- Preferred: set `graphql.tokenExchange.exchangeUrl` to your backend exchange endpoint (for example `https://login.suncoast.systems/v1/auth/token-exchange`) so the browser never calls Keycloak token exchange directly.
 - If `tokenExchange.tokenUrl` / `tokenExchange.clientId` are omitted, the module falls back to shell auth runtime values (`data-auth-token-url`, `data-auth-client-id`, `window.__SUNCOAST_AUTH__.config`).
 
 Local preview:
@@ -94,7 +95,10 @@ If your auth provider returns `access_token` in URL hash (implicit flow), the pr
    - optional `graphql.tokenExchange.*`:
      - `enabled`
      - `requestedAudience` (set this to the Hasura/GraphQL audience expected by auth hook)
+     - `requestedAudiences` (optional array; request multiple audiences in one exchanged token)
      - `requestedScope` (optional)
+     - `exchangeUrl` (recommended; dedicated backend token exchange endpoint)
+     - `appSlug` (required for backend exchange mode)
      - `tokenUrl` (optional; defaults from shell auth runtime)
      - `clientId` (optional; defaults from shell auth runtime)
    - `graphql.submitMutation` and `graphql.streamSubscription` (defaults are preconfigured for `publish_async_request` + `graphql_client_async_messages`)

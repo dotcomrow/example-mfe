@@ -30,9 +30,12 @@ type GraphqlConfig = {
 type GraphqlTokenExchangeConfig = {
   enabled: boolean;
   requestedAudience: string;
+  requestedAudiences: string[];
   requestedScope: string;
   tokenUrl: string;
   clientId: string;
+  exchangeUrl: string;
+  appSlug: string;
 };
 
 type ChatProps = {
@@ -131,13 +134,17 @@ type RuntimeGraphqlConfig = {
 type RuntimeTokenExchangeDefaults = {
   tokenUrl: string;
   clientId: string;
+  exchangeUrl: string;
+  appSlug: string;
 };
 
 type TokenExchangeCacheEntry = {
   sourceToken: string;
   tokenUrl: string;
   clientId: string;
-  requestedAudience: string;
+  exchangeUrl: string;
+  appSlug: string;
+  requestedAudienceKey: string;
   requestedScope: string;
   exchangedToken: string;
   expiresAt: number | null;
@@ -252,6 +259,44 @@ function tokenHasAudience(token: string, audience: string): boolean {
   return false;
 }
 
+function tokenHasAllAudiences(token: string, audiences: string[]): boolean {
+  const normalized = normalizeAudienceValues("", audiences);
+  if (normalized.length === 0) {
+    return false;
+  }
+  return normalized.every((audience) => tokenHasAudience(token, audience));
+}
+
+function normalizeAudienceValues(singleAudience: string, audiences: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (value: string) => {
+    const normalized = value.trim();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    out.push(normalized);
+  };
+
+  push(singleAudience);
+  for (const value of audiences) {
+    push(value);
+  }
+
+  return out;
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => asString(entry).trim())
+    .filter(Boolean);
+}
+
 function deriveTokenEndpointFromTokenIssuer(token: string): string {
   const payload = parseJwtPayload(token);
   const issuer = asString(payload.iss).trim().replace(/\/+$/g, "");
@@ -336,19 +381,46 @@ function readGraphqlFromWindow(): RuntimeGraphqlConfig {
 
 function readTokenExchangeDefaults(): RuntimeTokenExchangeDefaults {
   if (typeof window === "undefined") {
-    return { tokenUrl: "", clientId: "" };
+    return { tokenUrl: "", clientId: "", exchangeUrl: "", appSlug: "" };
   }
 
   const root = document.getElementById("cms-root");
   const tokenUrlFromDom = asString(root?.dataset.authTokenUrl).trim();
   const clientIdFromDom = asString(root?.dataset.authClientId).trim();
+  const gatewayUrlFromDom = asString(root?.dataset.authGatewayUrl).trim();
+  const gatewayExchangePathFromDom = asString(root?.dataset.authGatewayExchangePath).trim();
+  const gatewayAppSlugFromDom = asString(root?.dataset.authGatewayAppSlug).trim();
 
   const globalAuth = asRecord((window as Window & { __SUNCOAST_AUTH__?: unknown }).__SUNCOAST_AUTH__);
   const authConfig = asRecord(globalAuth.config);
+  const gatewayUrl = firstNonEmpty(
+    asString(authConfig.gatewayUrl).trim(),
+    gatewayUrlFromDom,
+  );
+  const gatewayExchangePath = firstNonEmpty(
+    asString(authConfig.gatewayExchangePath).trim(),
+    gatewayExchangePathFromDom,
+    "/v1/auth/token-exchange",
+  );
+  const exchangeUrl = (() => {
+    if (!gatewayUrl) {
+      return "";
+    }
+    try {
+      return new URL(gatewayExchangePath, gatewayUrl).toString();
+    } catch {
+      return "";
+    }
+  })();
 
   return {
     tokenUrl: firstNonEmpty(asString(authConfig.tokenUrl), tokenUrlFromDom),
     clientId: firstNonEmpty(asString(authConfig.clientId), clientIdFromDom),
+    exchangeUrl,
+    appSlug: firstNonEmpty(
+      asString(authConfig.gatewayAppSlug).trim(),
+      gatewayAppSlugFromDom,
+    ),
   };
 }
 
@@ -703,21 +775,23 @@ function normalizeTokenExchangeConfig(value: unknown): GraphqlTokenExchangeConfi
   const record = asRecord(value);
   const hasConfig = Object.keys(record).length > 0;
 
-  const requestedAudience = asString(
-    record.requestedAudience || record.requested_audience,
-  ).trim();
+  const requestedAudience = asString(record.requestedAudience || record.requested_audience).trim();
+  const requestedAudiences = normalizeAudienceValues(
+    requestedAudience,
+    parseStringArray(record.requestedAudiences || record.requested_audiences),
+  );
   const requestedScope = asString(record.requestedScope || record.requested_scope).trim();
-  const enabled =
-    hasConfig
-      ? asBoolean(record.enabled, Boolean(requestedAudience || requestedScope))
-      : false;
+  const enabled = hasConfig ? asBoolean(record.enabled, Boolean(requestedAudiences.length || requestedScope)) : false;
 
   return {
     enabled,
     requestedAudience,
+    requestedAudiences,
     requestedScope,
     tokenUrl: asString(record.tokenUrl || record.token_url).trim(),
     clientId: asString(record.clientId || record.client_id).trim(),
+    exchangeUrl: asString(record.exchangeUrl || record.exchange_url).trim(),
+    appSlug: asString(record.appSlug || record.app_slug).trim(),
   };
 }
 
@@ -895,6 +969,8 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
         ...tokenExchange,
         tokenUrl: firstNonEmpty(tokenExchange.tokenUrl, tokenExchangeDefaults.tokenUrl),
         clientId: firstNonEmpty(tokenExchange.clientId, tokenExchangeDefaults.clientId),
+        exchangeUrl: firstNonEmpty(tokenExchange.exchangeUrl, tokenExchangeDefaults.exchangeUrl),
+        appSlug: firstNonEmpty(tokenExchange.appSlug, tokenExchangeDefaults.appSlug),
       },
     };
   };
@@ -906,30 +982,41 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       return graphql;
     }
 
-    const requestedAudience = asString(tokenExchange.requestedAudience).trim();
+    const requestedAudiences = normalizeAudienceValues(
+      asString(tokenExchange.requestedAudience).trim(),
+      tokenExchange.requestedAudiences,
+    );
     const requestedScope = asString(tokenExchange.requestedScope).trim();
-    if (!requestedAudience && !requestedScope) {
+    if (requestedAudiences.length === 0 && !requestedScope) {
       return graphql;
     }
 
-    if (requestedAudience && tokenHasAudience(sourceToken, requestedAudience)) {
+    if (requestedAudiences.length > 0 && tokenHasAllAudiences(sourceToken, requestedAudiences)) {
       return graphql;
     }
 
+    const exchangeUrl = asString(tokenExchange.exchangeUrl).trim();
     const tokenUrl = firstNonEmpty(
       asString(tokenExchange.tokenUrl).trim(),
       deriveTokenEndpointFromTokenIssuer(sourceToken),
     );
     const clientId = asString(tokenExchange.clientId).trim();
+    const appSlug = asString(tokenExchange.appSlug).trim();
 
-    if (!tokenUrl) {
+    if (!exchangeUrl) {
+      if (!tokenUrl) {
+        throw new Error(
+          "Token exchange is enabled but no token endpoint is configured. Set graphql.tokenExchange.tokenUrl.",
+        );
+      }
+      if (!clientId) {
+        throw new Error(
+          "Token exchange is enabled but no client id is configured. Set graphql.tokenExchange.clientId.",
+        );
+      }
+    } else if (!appSlug) {
       throw new Error(
-        "Token exchange is enabled but no token endpoint is configured. Set graphql.tokenExchange.tokenUrl.",
-      );
-    }
-    if (!clientId) {
-      throw new Error(
-        "Token exchange is enabled but no client id is configured. Set graphql.tokenExchange.clientId.",
+        "Token exchange via gateway is enabled but no app slug is configured. Set graphql.tokenExchange.appSlug.",
       );
     }
 
@@ -939,7 +1026,9 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       cache.sourceToken === sourceToken &&
       cache.tokenUrl === tokenUrl &&
       cache.clientId === clientId &&
-      cache.requestedAudience === requestedAudience &&
+      cache.exchangeUrl === exchangeUrl &&
+      cache.appSlug === appSlug &&
+      cache.requestedAudienceKey === requestedAudiences.join("|") &&
       cache.requestedScope === requestedScope &&
       cache.exchangedToken &&
       (!cache.expiresAt || Date.now() + TOKEN_EXCHANGE_EXPIRY_LEEWAY_MS < cache.expiresAt)
@@ -947,30 +1036,59 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       return { ...graphql, authToken: cache.exchangedToken };
     }
 
-    const body = new URLSearchParams();
-    body.set("grant_type", TOKEN_EXCHANGE_GRANT_TYPE);
-    body.set("client_id", clientId);
-    body.set("subject_token", sourceToken);
-    body.set("subject_token_type", ACCESS_TOKEN_TYPE_URN);
-    body.set("requested_token_type", ACCESS_TOKEN_TYPE_URN);
-    if (requestedAudience) {
-      body.set("audience", requestedAudience);
-    }
-    if (requestedScope) {
-      body.set("scope", requestedScope);
-    }
+    let response: Response;
+    if (exchangeUrl) {
+      const gatewayBody: Record<string, unknown> = {
+        app_slug: appSlug,
+        subject_token: sourceToken,
+      };
+      if (requestedAudiences.length === 1) {
+        gatewayBody.requested_audience = requestedAudiences[0];
+      } else if (requestedAudiences.length > 1) {
+        gatewayBody.requested_audiences = requestedAudiences;
+      }
+      if (requestedScope) {
+        gatewayBody.requested_scope = requestedScope;
+      }
 
-    setStatus("Exchanging auth token for GraphQL audience...");
-    const response = await fetch(tokenUrl, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      body: body.toString(),
-      signal: ctx.signal,
-      cache: "no-store",
-    });
+      setStatus("Exchanging auth token via auth gateway...");
+      response = await fetch(exchangeUrl, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          authorization: `Bearer ${sourceToken}`,
+        },
+        body: JSON.stringify(gatewayBody),
+        signal: ctx.signal,
+        cache: "no-store",
+      });
+    } else {
+      const body = new URLSearchParams();
+      body.set("grant_type", TOKEN_EXCHANGE_GRANT_TYPE);
+      body.set("client_id", clientId);
+      body.set("subject_token", sourceToken);
+      body.set("subject_token_type", ACCESS_TOKEN_TYPE_URN);
+      body.set("requested_token_type", ACCESS_TOKEN_TYPE_URN);
+      for (const audience of requestedAudiences) {
+        body.append("audience", audience);
+      }
+      if (requestedScope) {
+        body.set("scope", requestedScope);
+      }
+
+      setStatus("Exchanging auth token for GraphQL audience...");
+      response = await fetch(tokenUrl, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+        signal: ctx.signal,
+        cache: "no-store",
+      });
+    }
     if (!response.ok) {
       const details = (await response.text()).trim().slice(0, 240);
       throw new Error(
@@ -996,7 +1114,9 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       sourceToken,
       tokenUrl,
       clientId,
-      requestedAudience,
+      exchangeUrl,
+      appSlug,
+      requestedAudienceKey: requestedAudiences.join("|"),
       requestedScope,
       exchangedToken,
       expiresAt,

@@ -12,7 +12,10 @@
     "tokenExchange": {
       "enabled": false,
       "requestedAudience": "",
+      "requestedAudiences": [],
       "requestedScope": "",
+      "exchangeUrl": "",
+      "appSlug": "",
       "tokenUrl": "",
       "clientId": ""
     },
