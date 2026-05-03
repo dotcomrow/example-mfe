@@ -534,6 +534,67 @@ function toDisplayText(value: unknown, depth = 0): string {
   return "";
 }
 
+function describeUnknownError(error: unknown, depth = 0): string {
+  if (depth > 6) {
+    return "";
+  }
+  if (error instanceof Error) {
+    return error.message.trim();
+  }
+  if (typeof error === "string") {
+    return error.trim();
+  }
+  if (typeof error === "number" || typeof error === "boolean") {
+    return String(error);
+  }
+  if (Array.isArray(error)) {
+    const messages = error
+      .map((entry) => describeUnknownError(entry, depth + 1).trim())
+      .filter(Boolean);
+    if (messages.length > 0) {
+      return messages.join("; ");
+    }
+    return "";
+  }
+  if (!error || typeof error !== "object") {
+    return "";
+  }
+
+  const record = asRecord(error);
+  const explicitKeys = [
+    "message",
+    "error",
+    "reason",
+    "description",
+    "details",
+  ];
+  for (const key of explicitKeys) {
+    const nested = describeUnknownError(record[key], depth + 1).trim();
+    if (nested) {
+      return nested;
+    }
+  }
+
+  const maybeCode = asString(record.code).trim();
+  const maybeReason = asString(record.reason).trim();
+  const maybeType = asString(record.type).trim();
+  if (maybeCode || maybeReason) {
+    return [maybeType || "stream", maybeCode, maybeReason].filter(Boolean).join(" ");
+  }
+
+  const fallbackText = toDisplayText(record, depth + 1).trim();
+  if (fallbackText) {
+    return fallbackText;
+  }
+
+  try {
+    const serialized = JSON.stringify(record);
+    return serialized.length > 240 ? `${serialized.slice(0, 237)}...` : serialized;
+  } catch {
+    return "";
+  }
+}
+
 function asInteger(value: unknown, fallback: number, min: number, max: number): number {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(min, Math.min(max, Math.round(value)));
@@ -1394,7 +1455,11 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
             }
           },
           error: (error) => {
-            settleReject(error);
+            settleReject(
+              new Error(
+                describeUnknownError(error) || "GraphQL stream connection failed.",
+              ),
+            );
           },
           complete: () => {
             settleResolve();
@@ -1506,7 +1571,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
         responseChannel: props.async.responseChannel || "",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown stream error";
+      const message = describeUnknownError(error) || "Unknown stream error";
       if (assistantBody) {
         assistantBody.textContent = `Error: ${message}`;
       } else {

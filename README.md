@@ -48,6 +48,13 @@ Session lifecycle ownership:
 - Token refresh scheduling and session-expiry warning UI are owned by the shell runtime.
 - This MFE only consumes shell auth globals (for example `window.__SUNCOAST_AUTH__`) before making requests.
 
+Build metadata debug helper (devtools):
+
+- `window.__SUNCOAST_GET_MFE_BUILD_INFO__("mfe-example-chat")`
+- Returns compile-time metadata for the loaded bundle (module version, build version, commit, timestamp, mode).
+- `window.__SUNCOAST_GET_MFE_BUILD_INFO__()` returns all loaded MFE build entries by module key.
+- Lookup is exact-key first, then case-insensitive.
+
 Optional token exchange:
 
 - Configure `graphql.tokenExchange` to exchange the shell bearer token to the audience this MFE needs before GraphQL submit/stream calls.
