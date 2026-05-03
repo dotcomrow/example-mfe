@@ -1243,6 +1243,39 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     }
   };
 
+  const readGlobalAuth = (): Record<string, unknown> => {
+    if (typeof window === "undefined") {
+      return {};
+    }
+    return asRecord((window as Window & { __SUNCOAST_AUTH__?: unknown }).__SUNCOAST_AUTH__);
+  };
+
+  const refreshShellAuthTokenIfPossible = async (minValiditySeconds = 120): Promise<void> => {
+    const auth = readGlobalAuth();
+    const attempts: Array<{ name: string; argsList: unknown[][] }> = [
+      { name: "ensureFreshToken", argsList: [[minValiditySeconds], []] },
+      { name: "updateToken", argsList: [[minValiditySeconds], []] },
+      { name: "refreshAccessToken", argsList: [[minValiditySeconds], []] },
+      { name: "refreshToken", argsList: [[minValiditySeconds], []] },
+      { name: "refreshSession", argsList: [[false], []] },
+    ];
+
+    for (const attempt of attempts) {
+      const fn = auth[attempt.name];
+      if (typeof fn !== "function") {
+        continue;
+      }
+      for (const args of attempt.argsList) {
+        try {
+          await Promise.resolve((fn as (...fnArgs: unknown[]) => unknown).apply(auth, args));
+          return;
+        } catch {
+          continue;
+        }
+      }
+    }
+  };
+
   const subscribeForStream = async (
     requestId: string,
     assistantBody: HTMLDivElement | null,
@@ -1396,6 +1429,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       requestChannel: props.async.requestChannel || "",
       responseChannel: props.async.responseChannel || "",
     });
+    await refreshShellAuthTokenIfPossible();
     const runtimeGraphql = resolveEffectiveGraphqlConfig();
 
     if (!props.async.enabled || props.async.mode === "none") {

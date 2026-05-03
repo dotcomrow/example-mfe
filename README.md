@@ -43,6 +43,11 @@ Resolution order:
 2. Shell runtime values (`#cms-root` data attrs / `window.__SUNCOAST_RUNTIME__.graphql`)
 3. Browser auth storage fallback for token (for preview helper flows)
 
+Session lifecycle ownership:
+
+- Token refresh scheduling and session-expiry warning UI are owned by the shell runtime.
+- This MFE only consumes shell auth globals (for example `window.__SUNCOAST_AUTH__`) before making requests.
+
 Optional token exchange:
 
 - Configure `graphql.tokenExchange` to exchange the shell bearer token to the audience this MFE needs before GraphQL submit/stream calls.
