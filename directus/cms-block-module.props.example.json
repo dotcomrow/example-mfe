@@ -9,7 +9,7 @@
     "httpUrl": "",
     "wsUrl": "",
     "authToken": "",
-    "hasuraRole": "ai_user",
+    "hasuraRole": "",
     "tokenExchange": {
       "enabled": false,
       "requestedAudience": "",

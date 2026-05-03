@@ -14,7 +14,6 @@ type GraphqlConfig = {
   httpUrl: string;
   wsUrl: string;
   authToken: string;
-  hasuraRole: string;
   tokenExchange: GraphqlTokenExchangeConfig;
   submitMutation: string;
   submitVariables: JsonValue;
@@ -900,10 +899,6 @@ function normalizeGraphqlConfig(rawProps: Record<string, unknown>, asyncConfig: 
     httpUrl: asString(graphql.httpUrl || graphql.http_url).trim(),
     wsUrl: asString(graphql.wsUrl || graphql.ws_url).trim(),
     authToken: asString(graphql.authToken || graphql.auth_token).trim(),
-    hasuraRole: firstNonEmpty(
-      asString(graphql.hasuraRole || graphql.hasura_role).trim(),
-      "ai_user",
-    ),
     tokenExchange: normalizeTokenExchangeConfig(
       graphql.tokenExchange || graphql.token_exchange,
     ),
@@ -982,16 +977,13 @@ async function executeGraphqlHttp<TData>(
   query: string,
   variables: JsonValue,
   authToken: string,
-  hasuraRole: string,
   signal?: AbortSignal,
 ): Promise<TData> {
-  const role = asString(hasuraRole).trim();
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
-      ...(role ? { "x-hasura-role": role } : {}),
     },
     body: JSON.stringify({ query, variables }),
     signal,
@@ -1368,9 +1360,6 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       if (graphql.authToken) {
         connectionHeaders.authorization = `Bearer ${graphql.authToken}`;
       }
-      if (graphql.hasuraRole) {
-        connectionHeaders["x-hasura-role"] = graphql.hasuraRole;
-      }
       const client = createClient({
         url: graphql.wsUrl,
         lazy: true,
@@ -1535,7 +1524,6 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
         graphql.submitMutation,
         submitVariables,
         graphql.authToken,
-        graphql.hasuraRole,
         ctx.signal,
       );
 

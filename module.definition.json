@@ -85,7 +85,7 @@
             "hasuraRole": {
               "type": "string",
               "title": "Hasura Role",
-              "description": "Hasura role header sent on GraphQL HTTP and WS calls (X-Hasura-Role). Defaults to ai_user."
+              "description": "Deprecated for async mode. This module does not send X-Hasura-Role and uses the token-derived default role."
             },
             "tokenExchange": {
               "type": "object",
