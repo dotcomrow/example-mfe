@@ -29,15 +29,15 @@ function readGitCommit() {
 
 const mode = process.env.MFE_BUILD_MODE || process.env.NODE_ENV || "production";
 const env = readEnvironment(mode);
-const buildVersion =
-  process.env.MFE_BUILD_VERSION ||
-  process.env.MFE_MODULE_VERSION ||
-  readPackageVersion() ||
-  "0.0.0";
 const buildCommit = (process.env.MFE_BUILD_COMMIT || process.env.GITHUB_SHA || readGitCommit())
   .trim()
   .slice(0, 12);
 const buildTimestamp = new Date().toISOString();
+const buildTimestampCompact = buildTimestamp.replace(/[-:TZ.]/g, "").slice(0, 14);
+const moduleVersion = process.env.MFE_MODULE_VERSION || readPackageVersion() || "0.0.0";
+const buildVersion =
+  process.env.MFE_BUILD_VERSION ||
+  `${moduleVersion}+b${buildTimestampCompact}${buildCommit ? `.${buildCommit}` : ""}`;
 
 await build({
   entryPoints: ["src/index.ts"],
