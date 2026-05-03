@@ -445,6 +445,7 @@ async function mountFromForm() {
       httpUrl: httpUrlInput.value.trim(),
       wsUrl: wsUrlInput.value.trim(),
       authToken: authTokenInput.value.trim(),
+      hasuraRole: "ai_user",
       submitMutation:
         "mutation PublishAsyncRequest($input: json!) { publish_async_request(input: $input) }",
       submitVariables: {

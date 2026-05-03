@@ -68,6 +68,11 @@
             "title": "Auth Token",
             "description": "Optional bearer token override for GraphQL HTTP and WS calls. Leave empty to inherit shell auth."
           },
+          "hasuraRole": {
+            "type": "string",
+            "title": "Hasura Role",
+            "description": "Hasura role header sent on GraphQL HTTP and WS calls (X-Hasura-Role). Defaults to ai_user."
+          },
           "tokenExchange": {
             "type": "object",
             "title": "Token Exchange",
@@ -470,6 +475,7 @@
       "httpUrl": "https://cf-suncoast-graphql-proxy.prod.suncoast.systems/graphql",
       "wsUrl": "wss://cf-suncoast-graphql-proxy.prod.suncoast.systems/graphql",
       "authToken": "",
+      "hasuraRole": "ai_user",
       "tokenExchange": {
         "enabled": false,
         "requestedAudience": "",
