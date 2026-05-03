@@ -124,6 +124,7 @@ const RUNTIME_TOKEN_STORAGE_KEYS = [
 const TOKEN_EXCHANGE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange";
 const ACCESS_TOKEN_TYPE_URN = "urn:ietf:params:oauth:token-type:access_token";
 const TOKEN_EXCHANGE_EXPIRY_LEEWAY_MS = 30_000;
+const AUTH_LOGOUT_EVENTS = ["auth-logout", "suncoast-auth-logout"] as const;
 
 type RuntimeGraphqlConfig = {
   httpUrl: string;
@@ -1017,6 +1018,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
   let listEl: HTMLDivElement | null = null;
   let statusEl: HTMLDivElement | null = null;
   let activeDispose: (() => void) | null = null;
+  let detachAuthLogoutListeners: (() => void) | null = null;
   let tokenExchangeCache: TokenExchangeCacheEntry | null = null;
 
   const resolveRuntimeGraphql = (): RuntimeGraphqlConfig => {
@@ -1223,6 +1225,34 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       activeDispose();
       activeDispose = null;
     }
+  };
+
+  const clearModuleAuthSessionState = () => {
+    tokenExchangeCache = null;
+    clearActiveSubscription();
+    setPending(false);
+    if (inputEl) {
+      inputEl.value = "";
+    }
+    setStatus("Signed out. Session state cleared.");
+  };
+
+  const bindAuthLogoutListeners = (): (() => void) | null => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const onAuthLogout = () => {
+      clearModuleAuthSessionState();
+      appendLine("system", "Sign-out detected. Cleared local module auth state.");
+    };
+    for (const eventName of AUTH_LOGOUT_EVENTS) {
+      window.addEventListener(eventName, onAuthLogout as EventListener);
+    }
+    return () => {
+      for (const eventName of AUTH_LOGOUT_EVENTS) {
+        window.removeEventListener(eventName, onAuthLogout as EventListener);
+      }
+    };
   };
 
   const appendLine = (role: "user" | "assistant" | "system", text: string) => {
@@ -1679,6 +1709,10 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     mount(input) {
       host = input.element ?? host;
       render();
+      if (detachAuthLogoutListeners) {
+        detachAuthLogoutListeners();
+      }
+      detachAuthLogoutListeners = bindAuthLogoutListeners();
       appendLine("system", "Module mounted.");
     },
     update(input) {
@@ -1703,6 +1737,10 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     },
     unmount() {
       destroyed = true;
+      if (detachAuthLogoutListeners) {
+        detachAuthLogoutListeners();
+        detachAuthLogoutListeners = null;
+      }
       clearActiveSubscription();
       if (formEl) {
         const clone = formEl.cloneNode(true);

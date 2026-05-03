@@ -47,6 +47,7 @@ Session lifecycle ownership:
 
 - Token refresh scheduling and session-expiry warning UI are owned by the shell runtime.
 - This MFE only consumes shell auth globals (for example `window.__SUNCOAST_AUTH__`) before making requests.
+- For template guidance on logout events and local auth-state cleanup, see `MFE_AUTH_INTEGRATION_REFERENCE.md`.
 
 Build metadata debug helper (devtools):
 
