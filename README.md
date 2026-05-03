@@ -105,7 +105,7 @@ If your auth provider returns `access_token` in URL hash (implicit flow), the pr
 5. Set:
    - optional `graphql.httpUrl` and `graphql.wsUrl` overrides (leave unset to use shell runtime defaults)
    - optional `graphql.authToken` override (usually leave unset and let shell runtime auth provide token)
-   - optional `graphql.hasuraRole` override (defaults to `ai_user` for this MFE)
+   - `graphql.hasuraRole` is deprecated in async mode and ignored by runtime (role comes from token claims)
    - optional `graphql.tokenExchange.*`:
      - `enabled`
      - `requestedAudience` (set this to the Hasura/GraphQL audience expected by auth hook)
