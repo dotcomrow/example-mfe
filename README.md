@@ -109,6 +109,7 @@ If your auth provider returns `access_token` in URL hash (implicit flow), the pr
      - `requiredRole` (optional role required to use this MFE; when missing, module is hidden)
      - `hideWhenUnauthorized` (optional; hide instead of showing denied message for non-role access failures)
      - `unauthorizedMessage` (optional denied message when not hidden)
+     - when `requiredRole` is set, the module also forwards that role into async request metadata so backend policy can reject unauthorized API requests
    - optional `graphql.httpUrl` and `graphql.wsUrl` overrides (leave unset to use shell runtime defaults)
    - optional `graphql.authToken` override (usually leave unset and let shell runtime auth provide token)
    - `graphql.hasuraRole` is deprecated in async mode and ignored by runtime (role comes from token claims)

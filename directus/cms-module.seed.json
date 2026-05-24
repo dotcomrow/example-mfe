@@ -523,6 +523,8 @@
             "moduleKey": "{{moduleKey}}",
             "instanceId": "{{instanceId}}",
             "source": "{{source}}",
+            "requiredRole": "{{requiredRole}}",
+            "required_role": "{{requiredRole}}",
             "asyncMode": "{{asyncMode}}",
             "requestChannel": "{{requestChannel}}",
             "responseChannel": "{{responseChannel}}",

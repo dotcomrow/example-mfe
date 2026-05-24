@@ -1047,6 +1047,8 @@ function normalizeGraphqlConfig(rawProps: Record<string, unknown>, asyncConfig: 
             moduleKey: "{{moduleKey}}",
             instanceId: "{{instanceId}}",
             source: "{{source}}",
+            requiredRole: "{{requiredRole}}",
+            required_role: "{{requiredRole}}",
             cacheKey: "{{cacheKey}}",
             contentHash: "{{contentHash}}",
             asyncMode: "{{asyncMode}}",
@@ -1091,6 +1093,41 @@ function normalizeRequiredRole(value: string): string {
     return "";
   }
   return normalized;
+}
+
+function injectRequiredRoleIntoSubmitVariables(
+  submitVariables: JsonValue,
+  requiredRole: string,
+): JsonValue {
+  const normalizedRole = normalizeRequiredRole(requiredRole);
+  if (!normalizedRole) {
+    return submitVariables;
+  }
+  if (!submitVariables || typeof submitVariables !== "object" || Array.isArray(submitVariables)) {
+    return submitVariables;
+  }
+
+  const root = { ...(submitVariables as JsonObject) };
+  const inputValue = root.input;
+  if (!inputValue || typeof inputValue !== "object" || Array.isArray(inputValue)) {
+    return root;
+  }
+
+  const inputRecord = { ...(inputValue as JsonObject) };
+  inputRecord.requiredRole = normalizedRole;
+  inputRecord.required_role = normalizedRole;
+
+  const metadataValue = inputRecord.metadata;
+  const metadataRecord =
+    metadataValue && typeof metadataValue === "object" && !Array.isArray(metadataValue)
+      ? { ...(metadataValue as JsonObject) }
+      : {};
+  metadataRecord.requiredRole = normalizedRole;
+  metadataRecord.required_role = normalizedRole;
+  inputRecord.metadata = metadataRecord;
+
+  root.input = inputRecord;
+  return root;
 }
 
 function normalizeSecurityConfig(rawProps: Record<string, unknown>): ChatSecurityConfig {
@@ -1835,6 +1872,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       const submitVariables = applyTemplate(graphql.submitVariables, {
         prompt: text,
         conversationId: graphql.conversationId,
+        requiredRole: props.security.requiredRole,
         moduleKey: ctx.moduleKey,
         instanceId: ctx.instanceId,
         cacheKey: ctx.environment.cacheKey || "",
@@ -1845,11 +1883,15 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
         responseChannel: props.async.responseChannel || "",
         correlationIdPath: props.async.correlationIdPath || "",
       });
+      const submitVariablesWithSecurity = injectRequiredRoleIntoSubmitVariables(
+        submitVariables,
+        props.security.requiredRole,
+      );
 
       const submitData = await executeGraphqlHttp<Record<string, unknown>>(
         graphql.httpUrl,
         graphql.submitMutation,
-        submitVariables,
+        submitVariablesWithSecurity,
         graphql.authToken,
         ctx.signal,
       );
