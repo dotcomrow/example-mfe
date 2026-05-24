@@ -102,6 +102,7 @@ jobs:
     permissions:
       contents: read
     env:
+      MODULE_REGISTRY_SERVICE_URL_PROD: ${{ vars.MODULE_REGISTRY_SERVICE_URL_PROD || secrets.MODULE_REGISTRY_SERVICE_URL_PROD }}
       MODULE_REGISTRY_SERVICE_URL: ${{ vars.MODULE_REGISTRY_SERVICE_URL || secrets.MODULE_REGISTRY_SERVICE_URL }}
       MODULE_REGISTRY_SERVICE_URL_PREVIEW: ${{ vars.MODULE_REGISTRY_SERVICE_URL_PREVIEW || secrets.MODULE_REGISTRY_SERVICE_URL_PREVIEW }}
       MODULE_REGISTRY_SERVICE_PUBLISH_PATH: ${{ vars.MODULE_REGISTRY_SERVICE_PUBLISH_PATH || '/v1/modules/publish' }}
@@ -194,9 +195,9 @@ jobs:
               fi
               ;;
             production)
-              TARGET_URL="${MODULE_REGISTRY_SERVICE_URL}"
+              TARGET_URL="${MODULE_REGISTRY_SERVICE_URL_PROD:-${MODULE_REGISTRY_SERVICE_URL}}"
               if [[ -z "${TARGET_URL}" ]]; then
-                echo "Missing MODULE_REGISTRY_SERVICE_URL for production publish."
+                echo "Missing MODULE_REGISTRY_SERVICE_URL_PROD (or MODULE_REGISTRY_SERVICE_URL) for production publish."
                 exit 1
               fi
               ;;
