@@ -59,6 +59,26 @@
           "title": "Request Command",
           "description": "Command name the host uses to invoke this chat module programmatically."
         },
+        "secured": {
+          "type": "boolean",
+          "title": "Secured",
+          "description": "When true, user authentication is required before this module renders."
+        },
+        "requiredRole": {
+          "type": "string",
+          "title": "Required Role",
+          "description": "Optional role required to render this module. If role is missing, module is hidden."
+        },
+        "unauthorizedMessage": {
+          "type": "string",
+          "title": "Unauthorized Message",
+          "description": "Optional message shown when access is denied and the module is not hidden."
+        },
+        "hideWhenUnauthorized": {
+          "type": "boolean",
+          "title": "Hide When Unauthorized",
+          "description": "When true, hide the module instead of showing an access denied message."
+        },
         "graphql": {
           "type": "object",
           "title": "GraphQL Transport",

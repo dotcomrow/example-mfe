@@ -38,6 +38,13 @@ type GraphqlTokenExchangeConfig = {
   appSlug: string;
 };
 
+type ChatSecurityConfig = {
+  secured: boolean;
+  requiredRole: string;
+  unauthorizedMessage: string;
+  hideWhenUnauthorized: boolean;
+};
+
 type ChatProps = {
   title: string;
   inputPlaceholder: string;
@@ -45,6 +52,7 @@ type ChatProps = {
   assistantLabel: string;
   maxMessages: number;
   requestCommand: string;
+  security: ChatSecurityConfig;
   async: ModuleAsyncConfig;
   graphql: GraphqlConfig;
 };
@@ -178,6 +186,22 @@ function asString(value: unknown, fallback = ""): string {
   return fallback;
 }
 
+function asBooleanOrNull(value: unknown): boolean | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["0", "false", "no", "off"].includes(normalized)) {
+      return false;
+    }
+  }
+  return null;
+}
+
 function firstNonEmpty(...values: string[]): string {
   for (const value of values) {
     const normalized = value.trim();
@@ -186,6 +210,51 @@ function firstNonEmpty(...values: string[]): string {
     }
   }
   return "";
+}
+
+function pickObject(record: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  for (const key of keys) {
+    const value = asRecord(record[key]);
+    if (Object.keys(value).length > 0) {
+      return value;
+    }
+  }
+  return {};
+}
+
+function pickString(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = asString(record[key]).trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function pickStringFromRecords(records: Record<string, unknown>[], keys: string[]): string {
+  for (const record of records) {
+    const value = pickString(record, keys);
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
+function pickBooleanFromRecords(records: Record<string, unknown>[], keys: string[]): boolean | null {
+  for (const record of records) {
+    for (const key of keys) {
+      if (!(key in record)) {
+        continue;
+      }
+      const parsed = asBooleanOrNull(record[key]);
+      if (parsed !== null) {
+        return parsed;
+      }
+    }
+  }
+  return null;
 }
 
 function decodeBase64UrlToString(value: string): string {
@@ -227,6 +296,67 @@ function parseJwtPayload(token: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function collectRoleStrings(value: unknown, sink: Set<string>): void {
+  if (!Array.isArray(value)) {
+    return;
+  }
+  for (const entry of value) {
+    const role = asNonEmptyString(entry);
+    if (!role) {
+      continue;
+    }
+    sink.add(role.toLowerCase());
+  }
+}
+
+function collectRolesFromPayload(payload: Record<string, unknown>, sink: Set<string>): void {
+  collectRoleStrings(payload.roles, sink);
+
+  const realmAccess = payload.realm_access;
+  if (realmAccess && typeof realmAccess === "object" && !Array.isArray(realmAccess)) {
+    collectRoleStrings((realmAccess as Record<string, unknown>).roles, sink);
+  }
+
+  const resourceAccess = payload.resource_access;
+  if (resourceAccess && typeof resourceAccess === "object" && !Array.isArray(resourceAccess)) {
+    const resources = resourceAccess as Record<string, unknown>;
+    for (const resourceValue of Object.values(resources)) {
+      if (!resourceValue || typeof resourceValue !== "object" || Array.isArray(resourceValue)) {
+        continue;
+      }
+      collectRoleStrings((resourceValue as Record<string, unknown>).roles, sink);
+    }
+  }
+}
+
+function extractRolesFromTokens(accessToken: string, idToken: string): Set<string> {
+  const roles = new Set<string>();
+  if (accessToken) {
+    collectRolesFromPayload(parseJwtPayload(accessToken), roles);
+  }
+  if (idToken) {
+    collectRolesFromPayload(parseJwtPayload(idToken), roles);
+  }
+  return roles;
+}
+
+function hasRequiredRole(requiredRole: string | undefined, accessToken: string, idToken: string): boolean {
+  const normalizedRequiredRole = asNonEmptyString(requiredRole)?.toLowerCase();
+  if (!normalizedRequiredRole) {
+    return true;
+  }
+  const roles = extractRolesFromTokens(accessToken, idToken);
+  return roles.has(normalizedRequiredRole);
 }
 
 function parseJwtExpiryMs(token: string): number | null {
@@ -952,6 +1082,93 @@ function normalizeGraphqlConfig(rawProps: Record<string, unknown>, asyncConfig: 
   };
 }
 
+function normalizeRequiredRole(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.toLowerCase() === "none") {
+    return "";
+  }
+  return normalized;
+}
+
+function normalizeSecurityConfig(rawProps: Record<string, unknown>): ChatSecurityConfig {
+  const input = pickObject(rawProps, ["input"]);
+  const ui = pickObject(rawProps, ["ui"]);
+  const securityFromSource = pickObject(rawProps, ["security", "access", "authorization", "auth"]);
+  const securityFromInput = pickObject(input, ["security", "access", "authorization", "auth"]);
+  const securityFromUi = pickObject(ui, ["security", "access", "authorization", "auth"]);
+  const securityRecords = [securityFromSource, securityFromInput, securityFromUi];
+  const allRecords = [rawProps, input, ui, ...securityRecords];
+
+  const secured =
+    pickBooleanFromRecords(
+      [rawProps, input, ui],
+      [
+        "secured",
+        "secure",
+        "requiresSecurity",
+        "requireSecurity",
+        "securityRequired",
+        "requiresAuth",
+        "requireAuth",
+        "authRequired",
+      ],
+    ) ?? pickBooleanFromRecords(
+      securityRecords,
+      [
+        "enabled",
+        "secured",
+        "secure",
+        "required",
+        "requiresSecurity",
+        "requireSecurity",
+        "requiresAuth",
+        "requireAuth",
+        "authRequired",
+      ],
+    ) ?? false;
+
+  const requiredRole = normalizeRequiredRole(
+    pickStringFromRecords(allRecords, [
+      "requiredRole",
+      "required_role",
+      "requiredRoleForAccess",
+      "required_role_for_access",
+      "requiredRoleForPageAccess",
+      "required_role_for_page_access",
+      "role",
+    ]),
+  );
+
+  const unauthorizedMessage = pickStringFromRecords(allRecords, [
+    "unauthorizedMessage",
+    "unauthorized_message",
+    "accessDeniedMessage",
+    "access_denied_message",
+    "accessDeniedText",
+    "access_denied_text",
+  ]);
+
+  const hideWhenUnauthorized =
+    pickBooleanFromRecords(allRecords, [
+      "hideWhenUnauthorized",
+      "hide_when_unauthorized",
+      "hideIfUnauthorized",
+      "hide_if_unauthorized",
+      "hideWhenDenied",
+      "hide_when_denied",
+    ]) ?? false;
+
+  return {
+    secured,
+    requiredRole,
+    unauthorizedMessage,
+    hideWhenUnauthorized,
+  };
+}
+
 export function resolveChatProps(rawProps: unknown, inheritedAsync?: ModuleAsyncConfig): ChatProps {
   const props = asRecord(rawProps);
   const defaultTitle = "Example Chat MFE";
@@ -968,6 +1185,7 @@ export function resolveChatProps(rawProps: unknown, inheritedAsync?: ModuleAsync
     assistantLabel: asString(props.assistantLabel, defaultAssistant).trim() || defaultAssistant,
     maxMessages: asInteger(props.maxMessages, 20, 1, 200),
     requestCommand: asString(props.requestCommand, defaultCommand).trim() || defaultCommand,
+    security: normalizeSecurityConfig(props),
     async: normalizedAsync,
     graphql: normalizeGraphqlConfig(props, normalizedAsync),
   };
@@ -1020,6 +1238,12 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
   let activeDispose: (() => void) | null = null;
   let detachAuthLogoutListeners: (() => void) | null = null;
   let tokenExchangeCache: TokenExchangeCacheEntry | null = null;
+
+  type AccessCheckResult = {
+    ok: boolean;
+    hide: boolean;
+    message: string;
+  };
 
   const resolveRuntimeGraphql = (): RuntimeGraphqlConfig => {
     const runtimeFromContext = asRecord(ctx.environment?.graphql);
@@ -1333,6 +1557,74 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     return asRecord((window as Window & { __SUNCOAST_AUTH__?: unknown }).__SUNCOAST_AUTH__);
   };
 
+  const evaluateAccess = (runtimeGraphql?: RuntimeGraphqlConfig): AccessCheckResult => {
+    const security = props.security;
+    if (!security.secured) {
+      return { ok: true, hide: false, message: "" };
+    }
+
+    const auth = readGlobalAuth();
+    const effectiveGraphql = runtimeGraphql ?? resolveRuntimeGraphql();
+    const accessToken = firstNonEmpty(
+      asString(effectiveGraphql.authToken).trim(),
+      asString(auth.accessToken).trim(),
+    );
+    const idToken = asString(auth.idToken).trim();
+    const isAuthenticated =
+      Boolean(auth.isAuthenticated) || Boolean(accessToken || idToken);
+
+    if (!isAuthenticated) {
+      return {
+        ok: false,
+        hide: security.hideWhenUnauthorized,
+        message: security.unauthorizedMessage || "Sign in is required to access this module.",
+      };
+    }
+
+    const requiredRole = normalizeRequiredRole(security.requiredRole);
+    if (!requiredRole) {
+      return { ok: true, hide: false, message: "" };
+    }
+
+    if (!hasRequiredRole(requiredRole, accessToken, idToken)) {
+      return {
+        ok: false,
+        hide: true,
+        message:
+          security.unauthorizedMessage
+          || `Your account is missing the required role: ${requiredRole}.`,
+      };
+    }
+
+    return { ok: true, hide: false, message: "" };
+  };
+
+  const renderUnauthorizedState = (access: AccessCheckResult): void => {
+    host.setAttribute("data-example-mfe-access", "denied");
+    if (access.hide) {
+      host.hidden = true;
+      host.innerHTML = "";
+      return;
+    }
+
+    host.hidden = false;
+    host.innerHTML = "";
+
+    const denied = document.createElement("section");
+    denied.setAttribute("data-example-mfe", "chat-denied");
+    denied.style.margin = "0";
+    denied.style.padding = "0.75rem 0.9rem";
+    denied.style.border = `1px solid ${THEME_COLOR.border}`;
+    denied.style.borderRadius = "8px";
+    denied.style.background = THEME_COLOR.elevated;
+    denied.style.color = THEME_COLOR.text;
+    denied.style.fontSize = "0.84rem";
+    denied.style.lineHeight = "1.35";
+    denied.setAttribute("role", "status");
+    denied.textContent = access.message;
+    host.append(denied);
+  };
+
   const refreshShellAuthTokenIfPossible = async (minValiditySeconds = 120): Promise<void> => {
     const auth = readGlobalAuth();
     const attempts: Array<{ name: string; argsList: unknown[][] }> = [
@@ -1506,6 +1798,13 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
   };
 
   const submitMessage = async (text: string) => {
+    const runtimeGraphql = resolveEffectiveGraphqlConfig();
+    const access = evaluateAccess(runtimeGraphql);
+    if (!access.ok) {
+      renderUnauthorizedState(access);
+      return;
+    }
+
     appendLine("user", text);
     emitEvent(ctx, "mfe.example.chat.submitted", {
       text,
@@ -1514,8 +1813,6 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       responseChannel: props.async.responseChannel || "",
     });
     await refreshShellAuthTokenIfPossible();
-    const runtimeGraphql = resolveEffectiveGraphqlConfig();
-
     if (!props.async.enabled || props.async.mode === "none") {
       appendLine("system", "Async disabled. Enable props.async for GraphQL stream mode.");
       return;
@@ -1603,6 +1900,14 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
   };
 
   const render = () => {
+    const access = evaluateAccess(resolveEffectiveGraphqlConfig());
+    if (!access.ok) {
+      renderUnauthorizedState(access);
+      return;
+    }
+
+    host.hidden = false;
+    host.removeAttribute("data-example-mfe-access");
     host.innerHTML = "";
 
     const container = document.createElement("section");

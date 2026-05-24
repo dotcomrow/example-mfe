@@ -104,6 +104,11 @@ If your auth provider returns `access_token` in URL hash (implicit flow), the pr
 3. In a `cms_block_module` block, choose module key `mfe-example-chat`.
 4. Use `directus/cms-block-module.props.example.json` as your `props_json` baseline.
 5. Set:
+   - optional module access controls:
+     - `secured` (when true, require sign-in before module renders)
+     - `requiredRole` (optional role required to use this MFE; when missing, module is hidden)
+     - `hideWhenUnauthorized` (optional; hide instead of showing denied message for non-role access failures)
+     - `unauthorizedMessage` (optional denied message when not hidden)
    - optional `graphql.httpUrl` and `graphql.wsUrl` overrides (leave unset to use shell runtime defaults)
    - optional `graphql.authToken` override (usually leave unset and let shell runtime auth provide token)
    - `graphql.hasuraRole` is deprecated in async mode and ignored by runtime (role comes from token claims)

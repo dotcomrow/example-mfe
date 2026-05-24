@@ -5,6 +5,10 @@
   "assistantLabel": "AI",
   "maxMessages": 40,
   "requestCommand": "mfe.example.chat.send",
+  "secured": false,
+  "requiredRole": "",
+  "unauthorizedMessage": "",
+  "hideWhenUnauthorized": false,
   "graphql": {
     "httpUrl": "",
     "wsUrl": "",
