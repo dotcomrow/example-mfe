@@ -19,6 +19,7 @@
       "requestedAudience": "",
       "requestedAudiences": [],
       "requestedScope": "",
+      "requestHasuraClaims": false,
       "exchangeUrl": "",
       "appSlug": "",
       "tokenUrl": "",

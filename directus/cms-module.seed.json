@@ -122,6 +122,11 @@
                 "title": "Requested Scope",
                 "description": "Optional scope requested during token exchange."
               },
+              "requestHasuraClaims": {
+                "type": "boolean",
+                "title": "Request Hasura Claims",
+                "description": "When true, request a Hasura-claims token from auth gateway token exchange if audience is not explicitly set."
+              },
               "exchangeUrl": {
                 "type": "string",
                 "title": "Gateway Exchange URL",
@@ -505,6 +510,7 @@
         "requestedAudience": "",
         "requestedAudiences": [],
         "requestedScope": "",
+        "requestHasuraClaims": false,
         "exchangeUrl": "",
         "appSlug": "",
         "tokenUrl": "",

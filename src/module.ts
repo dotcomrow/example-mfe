@@ -32,6 +32,7 @@ type GraphqlTokenExchangeConfig = {
   requestedAudience: string;
   requestedAudiences: string[];
   requestedScope: string;
+  requestHasuraClaims: boolean;
   tokenUrl: string;
   clientId: string;
   exchangeUrl: string;
@@ -155,6 +156,7 @@ type TokenExchangeCacheEntry = {
   appSlug: string;
   requestedAudienceKey: string;
   requestedScope: string;
+  requestHasuraClaims: boolean;
   exchangedToken: string;
   expiresAt: number | null;
 };
@@ -419,6 +421,41 @@ function normalizeAudienceValues(singleAudience: string, audiences: string[]): s
   return out;
 }
 
+function tokenContainsHasuraClaims(token: string): boolean {
+  const payload = parseJwtPayload(token);
+  const claimsNamespace = payload["https://hasura.io/jwt/claims"];
+  if (claimsNamespace && typeof claimsNamespace === "object" && !Array.isArray(claimsNamespace)) {
+    return true;
+  }
+
+  const nestedParent = asRecord(payload["https://hasura"]);
+  const nestedClaims = nestedParent["io/jwt/claims"];
+  if (nestedClaims && typeof nestedClaims === "object" && !Array.isArray(nestedClaims)) {
+    return true;
+  }
+
+  for (const key of Object.keys(payload)) {
+    if (key.startsWith("https://hasura.io/jwt/claims.")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function normalizeGatewayTokenExchangePath(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    return "/v1/auth/token-exchange";
+  }
+  if (normalized.endsWith("/token-exchange")) {
+    return normalized;
+  }
+  if (normalized.endsWith("/exchange")) {
+    return `${normalized.slice(0, -"/exchange".length)}/token-exchange`;
+  }
+  return normalized;
+}
+
 function parseStringArray(value: unknown): string[] {
   const normalize = (entries: unknown[]): string[] => {
     return entries
@@ -556,10 +593,13 @@ function readTokenExchangeDefaults(): RuntimeTokenExchangeDefaults {
     asString(authConfig.gatewayUrl).trim(),
     gatewayUrlFromDom,
   );
-  const gatewayExchangePath = firstNonEmpty(
-    asString(authConfig.gatewayExchangePath).trim(),
-    gatewayExchangePathFromDom,
-    "/v1/auth/token-exchange",
+  const gatewayExchangePath = normalizeGatewayTokenExchangePath(
+    firstNonEmpty(
+      asString(authConfig.gatewayTokenExchangePath).trim(),
+      asString(authConfig.gatewayExchangePath).trim(),
+      gatewayExchangePathFromDom,
+      "/v1/auth/token-exchange",
+    ),
   );
   const exchangeUrl = (() => {
     if (!gatewayUrl) {
@@ -1001,13 +1041,20 @@ function normalizeTokenExchangeConfig(value: unknown): GraphqlTokenExchangeConfi
     parseStringArray(record.requestedAudiences || record.requested_audiences),
   );
   const requestedScope = asString(record.requestedScope || record.requested_scope).trim();
-  const enabled = hasConfig ? asBoolean(record.enabled, Boolean(requestedAudiences.length || requestedScope)) : false;
+  const requestHasuraClaims = asBoolean(
+    record.requestHasuraClaims ?? record.request_hasura_claims,
+    false,
+  );
+  const enabled = hasConfig
+    ? asBoolean(record.enabled, Boolean(requestedAudiences.length || requestedScope || requestHasuraClaims))
+    : false;
 
   return {
     enabled,
     requestedAudience,
     requestedAudiences,
     requestedScope,
+    requestHasuraClaims,
     tokenUrl: asString(record.tokenUrl || record.token_url).trim(),
     clientId: asString(record.clientId || record.client_id).trim(),
     exchangeUrl: asString(record.exchangeUrl || record.exchange_url).trim(),
@@ -1330,7 +1377,19 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
   const resolveGraphqlForRequest = async (graphql: GraphqlConfig): Promise<GraphqlConfig> => {
     const sourceToken = asString(graphql.authToken).trim();
     const tokenExchange = graphql.tokenExchange;
-    if (!sourceToken || !tokenExchange.enabled) {
+    if (!sourceToken) {
+      return graphql;
+    }
+
+    const requiresSecureToken =
+      (props.security.secured || Boolean(normalizeRequiredRole(props.security.requiredRole)))
+      && !tokenContainsHasuraClaims(sourceToken);
+    const canExchangeViaGateway = Boolean(
+      asString(tokenExchange.exchangeUrl).trim() && asString(tokenExchange.appSlug).trim(),
+    );
+    const effectiveTokenExchangeEnabled =
+      tokenExchange.enabled || (requiresSecureToken && canExchangeViaGateway);
+    if (!effectiveTokenExchangeEnabled) {
       return graphql;
     }
 
@@ -1339,7 +1398,9 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       tokenExchange.requestedAudiences,
     );
     const requestedScope = asString(tokenExchange.requestedScope).trim();
-    if (requestedAudiences.length === 0 && !requestedScope) {
+    const requestHasuraClaims =
+      tokenExchange.requestHasuraClaims || (requiresSecureToken && canExchangeViaGateway);
+    if (requestedAudiences.length === 0 && !requestedScope && !requestHasuraClaims) {
       return graphql;
     }
 
@@ -1360,6 +1421,11 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     const appSlug = asString(tokenExchange.appSlug).trim();
 
     if (!exchangeUrl) {
+      if (requestHasuraClaims && requestedAudiences.length === 0) {
+        throw new Error(
+          "Token exchange requestHasuraClaims requires graphql.tokenExchange.exchangeUrl.",
+        );
+      }
       if (!tokenUrl) {
         throw new Error(
           "Token exchange is enabled but no token endpoint is configured. Set graphql.tokenExchange.tokenUrl.",
@@ -1386,6 +1452,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       cache.appSlug === appSlug &&
       cache.requestedAudienceKey === requestedAudiences.join("|") &&
       cache.requestedScope === requestedScope &&
+      cache.requestHasuraClaims === requestHasuraClaims &&
       cache.exchangedToken &&
       (!cache.expiresAt || Date.now() + TOKEN_EXCHANGE_EXPIRY_LEEWAY_MS < cache.expiresAt)
     ) {
@@ -1405,6 +1472,9 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       }
       if (requestedScope) {
         gatewayBody.requested_scope = requestedScope;
+      }
+      if (requestHasuraClaims) {
+        gatewayBody.request_hasura_claims = true;
       }
 
       setStatus("Exchanging auth token via auth gateway...");
@@ -1474,6 +1544,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       appSlug,
       requestedAudienceKey: requestedAudiences.join("|"),
       requestedScope,
+      requestHasuraClaims,
       exchangedToken,
       expiresAt,
     };

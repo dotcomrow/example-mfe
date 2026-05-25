@@ -61,6 +61,7 @@ Optional token exchange:
 - Configure `graphql.tokenExchange` to exchange the shell bearer token to the audience this MFE needs before GraphQL submit/stream calls.
 - Preferred: set `graphql.tokenExchange.exchangeUrl` to your backend exchange endpoint (for example `https://login.suncoast.systems/v1/auth/token-exchange`) so the browser never calls Keycloak token exchange directly.
 - When `exchangeUrl` is set, the MFE performs gateway exchange even if the source token already contains the requested audience (so gateway can still mint/augment required claims).
+- If module security is enabled (`secured=true` or `requiredRole` set) and the shell token lacks Hasura claims, the MFE now auto-attempts gateway token exchange using `exchangeUrl` + `appSlug` (even when `tokenExchange.enabled` is false).
 - If `tokenExchange.tokenUrl` / `tokenExchange.clientId` are omitted, the module falls back to shell auth runtime values (`data-auth-token-url`, `data-auth-client-id`, `window.__SUNCOAST_AUTH__.config`).
 
 Local preview:
@@ -118,6 +119,7 @@ If your auth provider returns `access_token` in URL hash (implicit flow), the pr
      - `requestedAudience` (set this to the Hasura/GraphQL audience expected by auth hook)
      - `requestedAudiences` (optional array; request multiple audiences in one exchanged token)
      - `requestedScope` (optional)
+     - `requestHasuraClaims` (optional boolean; for gateway exchange, ask backend to resolve Hasura audience and mint Hasura-claims token)
      - `exchangeUrl` (recommended; dedicated backend token exchange endpoint)
      - `appSlug` (required for backend exchange mode)
      - `tokenUrl` (optional; defaults from shell auth runtime)
