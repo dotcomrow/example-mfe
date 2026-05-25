@@ -1381,14 +1381,12 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       return graphql;
     }
 
-    const requiresSecureToken =
-      (props.security.secured || Boolean(normalizeRequiredRole(props.security.requiredRole)))
-      && !tokenContainsHasuraClaims(sourceToken);
+    const requiresHasuraClaims = !tokenContainsHasuraClaims(sourceToken);
     const canExchangeViaGateway = Boolean(
       asString(tokenExchange.exchangeUrl).trim() && asString(tokenExchange.appSlug).trim(),
     );
     const effectiveTokenExchangeEnabled =
-      tokenExchange.enabled || (requiresSecureToken && canExchangeViaGateway);
+      tokenExchange.enabled || (requiresHasuraClaims && canExchangeViaGateway);
     if (!effectiveTokenExchangeEnabled) {
       return graphql;
     }
@@ -1399,7 +1397,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     );
     const requestedScope = asString(tokenExchange.requestedScope).trim();
     const requestHasuraClaims =
-      tokenExchange.requestHasuraClaims || (requiresSecureToken && canExchangeViaGateway);
+      tokenExchange.requestHasuraClaims || (requiresHasuraClaims && canExchangeViaGateway);
     if (requestedAudiences.length === 0 && !requestedScope && !requestHasuraClaims) {
       return graphql;
     }
