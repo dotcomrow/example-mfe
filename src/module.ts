@@ -1149,6 +1149,26 @@ function normalizeRequiredRole(value: string): string {
   return normalized;
 }
 
+function pickRequiredRoleFromRecords(
+  allRecords: Record<string, unknown>[],
+  securityRecords: Record<string, unknown>[],
+): string {
+  // Prefer explicit module-scoped required-role fields.
+  const explicitRequiredRole = pickStringFromRecords(allRecords, [
+    "requiredRole",
+    "required_role",
+    "requiredRoleForAccess",
+    "required_role_for_access",
+  ]);
+  if (explicitRequiredRole) {
+    return explicitRequiredRole;
+  }
+
+  // Legacy fallback: only allow generic "role" from nested module security blocks.
+  // Avoid inheriting unrelated page-level role fields.
+  return pickStringFromRecords(securityRecords, ["role"]);
+}
+
 function injectRequiredRoleIntoSubmitVariables(
   submitVariables: JsonValue,
   requiredRole: string,
@@ -1222,15 +1242,7 @@ function normalizeSecurityConfig(rawProps: Record<string, unknown>): ChatSecurit
     ) ?? false;
 
   const requiredRole = normalizeRequiredRole(
-    pickStringFromRecords(allRecords, [
-      "requiredRole",
-      "required_role",
-      "requiredRoleForAccess",
-      "required_role_for_access",
-      "requiredRoleForPageAccess",
-      "required_role_for_page_access",
-      "role",
-    ]),
+    pickRequiredRoleFromRecords(allRecords, securityRecords),
   );
 
   const unauthorizedMessage = pickStringFromRecords(allRecords, [
