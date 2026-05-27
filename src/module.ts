@@ -1701,7 +1701,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
     if (!hasRequiredRole(requiredRole, [runtimeAccessToken, shellAccessToken, shellIdToken])) {
       return {
         ok: false,
-        hide: true,
+        hide: security.hideWhenUnauthorized,
         message:
           security.unauthorizedMessage
           || `Your account is missing the required role: ${requiredRole}.`,
