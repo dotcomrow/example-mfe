@@ -352,12 +352,19 @@ function extractRolesFromTokens(accessToken: string, idToken: string): Set<strin
   return roles;
 }
 
-function hasRequiredRole(requiredRole: string | undefined, accessToken: string, idToken: string): boolean {
+function hasRequiredRole(requiredRole: string | undefined, tokens: string[]): boolean {
   const normalizedRequiredRole = asNonEmptyString(requiredRole)?.toLowerCase();
   if (!normalizedRequiredRole) {
     return true;
   }
-  const roles = extractRolesFromTokens(accessToken, idToken);
+  const roles = new Set<string>();
+  for (const token of tokens) {
+    const normalizedToken = asString(token).trim();
+    if (!normalizedToken) {
+      continue;
+    }
+    collectRolesFromPayload(parseJwtPayload(normalizedToken), roles);
+  }
   return roles.has(normalizedRequiredRole);
 }
 
@@ -1671,13 +1678,12 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
 
     const auth = readGlobalAuth();
     const effectiveGraphql = runtimeGraphql ?? resolveRuntimeGraphql();
-    const accessToken = firstNonEmpty(
-      asString(effectiveGraphql.authToken).trim(),
-      asString(auth.accessToken).trim(),
-    );
-    const idToken = asString(auth.idToken).trim();
+    const runtimeAccessToken = asString(effectiveGraphql.authToken).trim();
+    const shellAccessToken = asString(auth.accessToken).trim();
+    const shellIdToken = asString(auth.idToken).trim();
+    const accessToken = firstNonEmpty(runtimeAccessToken, shellAccessToken);
     const isAuthenticated =
-      Boolean(auth.isAuthenticated) || Boolean(accessToken || idToken);
+      Boolean(auth.isAuthenticated) || Boolean(accessToken || shellIdToken);
 
     if (!isAuthenticated) {
       return {
@@ -1692,7 +1698,7 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       return { ok: true, hide: false, message: "" };
     }
 
-    if (!hasRequiredRole(requiredRole, accessToken, idToken)) {
+    if (!hasRequiredRole(requiredRole, [runtimeAccessToken, shellAccessToken, shellIdToken])) {
       return {
         ok: false,
         hide: true,
