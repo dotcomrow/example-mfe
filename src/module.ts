@@ -1151,22 +1151,14 @@ function normalizeRequiredRole(value: string): string {
 
 function pickRequiredRoleFromRecords(
   allRecords: Record<string, unknown>[],
-  securityRecords: Record<string, unknown>[],
 ): string {
   // Prefer explicit module-scoped required-role fields.
-  const explicitRequiredRole = pickStringFromRecords(allRecords, [
+  return pickStringFromRecords(allRecords, [
     "requiredRole",
     "required_role",
     "requiredRoleForAccess",
     "required_role_for_access",
   ]);
-  if (explicitRequiredRole) {
-    return explicitRequiredRole;
-  }
-
-  // Legacy fallback: only allow generic "role" from nested module security blocks.
-  // Avoid inheriting unrelated page-level role fields.
-  return pickStringFromRecords(securityRecords, ["role"]);
 }
 
 function injectRequiredRoleIntoSubmitVariables(
@@ -1213,37 +1205,43 @@ function normalizeSecurityConfig(rawProps: Record<string, unknown>): ChatSecurit
   const securityRecords = [securityFromSource, securityFromInput, securityFromUi];
   const allRecords = [rawProps, input, ui, ...securityRecords];
 
-  const secured =
-    pickBooleanFromRecords(
-      [rawProps, input, ui],
-      [
-        "secured",
-        "secure",
-        "requiresSecurity",
-        "requireSecurity",
-        "securityRequired",
-        "requiresAuth",
-        "requireAuth",
-        "authRequired",
-      ],
-    ) ?? pickBooleanFromRecords(
-      securityRecords,
-      [
-        "enabled",
-        "secured",
-        "secure",
-        "required",
-        "requiresSecurity",
-        "requireSecurity",
-        "requiresAuth",
-        "requireAuth",
-        "authRequired",
-      ],
-    ) ?? false;
-
   const requiredRole = normalizeRequiredRole(
-    pickRequiredRoleFromRecords(allRecords, securityRecords),
+    pickRequiredRoleFromRecords(allRecords),
   );
+  const roleRequiresSecurity = Boolean(requiredRole);
+  const securedFromTopLevel = pickBooleanFromRecords(
+    [rawProps, input, ui],
+    [
+      "secured",
+      "secure",
+      "requiresSecurity",
+      "requireSecurity",
+      "securityRequired",
+      "requiresAuth",
+      "requireAuth",
+      "authRequired",
+    ],
+  );
+  const securedFromNested = pickBooleanFromRecords(
+    securityRecords,
+    [
+      "enabled",
+      "secured",
+      "secure",
+      "required",
+      "requiresSecurity",
+      "requireSecurity",
+      "requiresAuth",
+      "requireAuth",
+      "authRequired",
+    ],
+  );
+  const secured =
+    securedFromTopLevel === true || securedFromNested === true || roleRequiresSecurity
+      ? true
+      : securedFromTopLevel === false || securedFromNested === false
+        ? false
+        : false;
 
   const unauthorizedMessage = pickStringFromRecords(allRecords, [
     "unauthorizedMessage",
@@ -1684,7 +1682,9 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
 
   const evaluateAccess = (runtimeGraphql?: RuntimeGraphqlConfig): AccessCheckResult => {
     const security = props.security;
-    if (!security.secured) {
+    const requiredRole = normalizeRequiredRole(security.requiredRole);
+    const securityEnabled = security.secured || Boolean(requiredRole);
+    if (!securityEnabled) {
       return { ok: true, hide: false, message: "" };
     }
 
@@ -1705,7 +1705,6 @@ export const createModule: ModuleFactory = (ctx): ModuleRuntime => {
       };
     }
 
-    const requiredRole = normalizeRequiredRole(security.requiredRole);
     if (!requiredRole) {
       return { ok: true, hide: false, message: "" };
     }
