@@ -1158,15 +1158,18 @@ function pickRequiredRoleFromRecords(
   ]);
 }
 
-function pickRequiredRoleForSecurityConfig(rawProps: Record<string, unknown>, securityRecords: Record<string, unknown>[]): string {
-  // Canonical setting is top-level module security field.
-  const fromTopLevel = pickRequiredRoleFromRecords([rawProps]);
-  if (fromTopLevel) {
-    return fromTopLevel;
+function pickRequiredRoleForSecurityConfig(
+  rawProps: Record<string, unknown>,
+  securityRecord: Record<string, unknown>,
+): string {
+  // Canonical setting is source.security (or legacy source.access/auth).
+  const fromSecurity = pickRequiredRoleFromRecords([securityRecord]);
+  if (fromSecurity) {
+    return fromSecurity;
   }
 
-  // Backward-compat fallback: explicit nested security objects only.
-  return pickRequiredRoleFromRecords(securityRecords);
+  // Backward-compat fallback: top-level field.
+  return pickRequiredRoleFromRecords([rawProps]);
 }
 
 function injectRequiredRoleIntoSubmitVariables(
@@ -1207,13 +1210,16 @@ function injectRequiredRoleIntoSubmitVariables(
 function normalizeSecurityConfig(rawProps: Record<string, unknown>): ChatSecurityConfig {
   const input = pickObject(rawProps, ["input"]);
   const ui = pickObject(rawProps, ["ui"]);
-  const securityFromSource = pickObject(rawProps, ["security", "access", "authorization", "auth"]);
-  const securityFromInput = pickObject(input, ["security", "access", "authorization", "auth"]);
-  const securityFromUi = pickObject(ui, ["security", "access", "authorization", "auth"]);
-  const securityRecords = [securityFromSource, securityFromInput, securityFromUi];
+  const securityFromSourcePrimary = pickObject(rawProps, ["security"]);
+  const securityFromSourceLegacy = pickObject(rawProps, ["access", "authorization", "auth"]);
+  const securityFromSource =
+    Object.keys(securityFromSourcePrimary).length > 0
+      ? securityFromSourcePrimary
+      : securityFromSourceLegacy;
+  const securityRecords = [securityFromSource];
 
   const requiredRole = normalizeRequiredRole(
-    pickRequiredRoleForSecurityConfig(rawProps, securityRecords),
+    pickRequiredRoleForSecurityConfig(rawProps, securityFromSource),
   );
   const roleRequiresSecurity = Boolean(requiredRole);
   const securedFromTopLevel = pickBooleanFromRecords(
