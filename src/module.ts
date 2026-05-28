@@ -1154,9 +1154,7 @@ function pickRequiredRoleFromRecords(
 ): string {
   return pickStringFromRecords(records, [
     "requiredRole",
-    "required_role",
     "requiredRoleForAccess",
-    "required_role_for_access",
   ]);
 }
 
