@@ -1150,15 +1150,25 @@ function normalizeRequiredRole(value: string): string {
 }
 
 function pickRequiredRoleFromRecords(
-  allRecords: Record<string, unknown>[],
+  records: Record<string, unknown>[],
 ): string {
-  // Prefer explicit module-scoped required-role fields.
-  return pickStringFromRecords(allRecords, [
+  return pickStringFromRecords(records, [
     "requiredRole",
     "required_role",
     "requiredRoleForAccess",
     "required_role_for_access",
   ]);
+}
+
+function pickRequiredRoleForSecurityConfig(rawProps: Record<string, unknown>, securityRecords: Record<string, unknown>[]): string {
+  // Canonical setting is top-level module security field.
+  const fromTopLevel = pickRequiredRoleFromRecords([rawProps]);
+  if (fromTopLevel) {
+    return fromTopLevel;
+  }
+
+  // Backward-compat fallback: explicit nested security objects only.
+  return pickRequiredRoleFromRecords(securityRecords);
 }
 
 function injectRequiredRoleIntoSubmitVariables(
@@ -1203,14 +1213,13 @@ function normalizeSecurityConfig(rawProps: Record<string, unknown>): ChatSecurit
   const securityFromInput = pickObject(input, ["security", "access", "authorization", "auth"]);
   const securityFromUi = pickObject(ui, ["security", "access", "authorization", "auth"]);
   const securityRecords = [securityFromSource, securityFromInput, securityFromUi];
-  const allRecords = [rawProps, input, ui, ...securityRecords];
 
   const requiredRole = normalizeRequiredRole(
-    pickRequiredRoleFromRecords(allRecords),
+    pickRequiredRoleForSecurityConfig(rawProps, securityRecords),
   );
   const roleRequiresSecurity = Boolean(requiredRole);
   const securedFromTopLevel = pickBooleanFromRecords(
-    [rawProps, input, ui],
+    [rawProps],
     [
       "secured",
       "secure",
@@ -1243,7 +1252,7 @@ function normalizeSecurityConfig(rawProps: Record<string, unknown>): ChatSecurit
         ? false
         : false;
 
-  const unauthorizedMessage = pickStringFromRecords(allRecords, [
+  const unauthorizedMessage = pickStringFromRecords([rawProps, input, ui, ...securityRecords], [
     "unauthorizedMessage",
     "unauthorized_message",
     "accessDeniedMessage",
@@ -1253,7 +1262,7 @@ function normalizeSecurityConfig(rawProps: Record<string, unknown>): ChatSecurit
   ]);
 
   const hideWhenUnauthorized =
-    pickBooleanFromRecords(allRecords, [
+    pickBooleanFromRecords([rawProps, input, ui, ...securityRecords], [
       "hideWhenUnauthorized",
       "hide_when_unauthorized",
       "hideIfUnauthorized",
