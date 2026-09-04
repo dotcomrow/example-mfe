@@ -29,7 +29,6 @@ jobs:
     outputs:
       module_version: ${{ steps.meta.outputs.module_version }}
       module_channel: ${{ steps.meta.outputs.module_channel }}
-      registry_target: ${{ steps.meta.outputs.registry_target }}
     permissions:
       contents: write
     env:
@@ -53,23 +52,8 @@ jobs:
       - name: Resolve Publish Metadata
         id: meta
         shell: bash
-        env:
-          REGISTRY_TARGET: ${{ inputs.registry_target || 'preview' }}
         run: |
-          case "${REGISTRY_TARGET}" in
-            production)
-              echo "module_channel=prod" >> "$GITHUB_OUTPUT"
-              echo "registry_target=production" >> "$GITHUB_OUTPUT"
-              ;;
-            preview)
-              echo "module_channel=preview" >> "$GITHUB_OUTPUT"
-              echo "registry_target=preview" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "Unsupported registry_target: ${REGISTRY_TARGET}. Expected preview or production."
-              exit 1
-              ;;
-          esac
+          echo "module_channel=preview" >> "$GITHUB_OUTPUT"
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "module_version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           else
@@ -127,7 +111,7 @@ jobs:
       MODULE_REGISTRY_SERVICE_GOOGLE_TOKEN_AUDIENCE: ${{ secrets.MODULE_REGISTRY_SERVICE_GOOGLE_TOKEN_AUDIENCE }}
       MODULE_CHANNEL: ${{ needs['build-package'].outputs.module_channel }}
       MFE_BUILD_MODE: ${{ inputs.build_mode || 'production' }}
-      MODULE_REGISTRY_TARGET: ${{ needs['build-package'].outputs.registry_target }}
+      MODULE_REGISTRY_TARGET: ${{ inputs.registry_target || 'preview' }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
